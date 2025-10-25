@@ -187,7 +187,7 @@ export default function AlcoholLevelPage() {
   };
 
   // ===== Upload helpers =====
-  const API_BASE = (process.env.NEXT_PUBLIC_API_URL ?? "").trim(); // e.g. http://localhost:3001
+  const API_BASE = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080").trim(); // e.g. http://localhost:3001
   const ENDPOINT = `${API_BASE}/predict`; // <-- adjust to your real route
 
   // const uploadBlob = async (blob: Blob, filename: string) => {
