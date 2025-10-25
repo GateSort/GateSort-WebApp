@@ -15,6 +15,16 @@ type PhotoItem = {
   createdAt: number;
   status: UploadStatus;
   error?: string | null;
+  // Campos opcionales para mostrar resultados del servidor
+  prediction?: string;
+  confidence?: number;
+};
+
+// Tipar la respuesta del servidor (mejor DX)
+type ServerPrediction = {
+  file_name: string;
+  predicted_class: string;
+  confidence: number;
 };
 
 export default function AlcoholLevelPage() {
@@ -188,41 +198,7 @@ export default function AlcoholLevelPage() {
 
   // ===== Upload helpers =====
   const API_BASE = (process.env.NEXT_PUBLIC_API_URL ?? "").trim(); // e.g. http://localhost:3001
-  const ENDPOINT = `${API_BASE}/predict`; // <-- adjust to your real route
-
-  // const uploadBlob = async (blob: Blob, filename: string) => {
-  //   const form = new FormData();
-  //   form.append("images", blob, filename); // change "photo" if your API expects a different field
-  //   const res = await fetch(ENDPOINT, { method: "POST", body: form });
-  //   if (!res.ok) throw new Error(await res.text().catch(() => `HTTP ${res.status}`));
-  //   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  //   return res.json().catch(() => ({} as any));
-  // };
-
-  // const uploadOne = async (id: number) => {
-  //   setPhotos((prev) =>
-  //     prev.map((p) => (p.id === id ? { ...p, status: "uploading", error: null } : p))
-  //   );
-  //   const target = photos.find((p) => p.id === id);
-  //   if (!target) return;
-  //   try {
-  //     await uploadBlob(target.blob, `bottle-${id}.jpg`);
-  //     setPhotos((prev) => prev.map((p) => (p.id === id ? { ...p, status: "ok" } : p)));
-  //   } catch (e: any) {
-  //     setPhotos((prev) =>
-  //       prev.map((p) =>
-  //         p.id === id ? { ...p, status: "error", error: e?.message || "Upload failed" } : p
-  //       )
-  //     );
-  //   }
-  // };
-  
-  // const uploadAll = async () => {
-  //   const pending = photos.filter((p) => p.status === "idle" || p.status === "error");
-  //   for (const p of pending) {
-  //     await uploadOne(p.id);
-  //   }
-  // };
+  const ENDPOINT = `${API_BASE}/predict`; // <-- ajusta a tu ruta real
 
   const uploadBlobs = async (items: { blob: Blob; id: number }[]) => {
     const form = new FormData();
@@ -231,43 +207,83 @@ export default function AlcoholLevelPage() {
       form.append("images", item.blob, `bottle-${item.id}.jpg`); // el campo debe coincidir con Flask
     });
 
+    console.groupCollapsed("[uploadBlobs] Enviando imágenes");
+    console.log("IDs:", items.map((i) => i.id));
+    console.log("Endpoint:", ENDPOINT);
+    console.groupEnd();
+
     const res = await fetch(ENDPOINT, { method: "POST", body: form });
     if (!res.ok) throw new Error(await res.text().catch(() => `HTTP ${res.status}`));
 
-    return res.json(); // devuelve { predictions: [...] }
+    // devuelve { predictions: [...] }
+    return res.json() as Promise<{ predictions: ServerPrediction[] }>;
   };
 
   const uploadAll = async () => {
     const pending = photos.filter((p) => p.status === "idle" || p.status === "error");
 
-    if (pending.length === 0) return;
+    if (pending.length === 0) {
+      console.info("[uploadAll] No hay fotos pendientes por subir.");
+      return;
+    }
 
     // marcar todas como "uploading"
     setPhotos((prev) =>
-      prev.map((p) => (pending.find((x) => x.id === p.id) ? { ...p, status: "uploading", error: null } : p))
+      prev.map((p) =>
+        pending.find((x) => x.id === p.id) ? { ...p, status: "uploading", error: null } : p
+      )
     );
 
+    console.time("[uploadAll] Tiempo de subida");
     try {
       const results = await uploadBlobs(pending.map((p) => ({ blob: p.blob, id: p.id })));
+
+      // === LOGS EN CONSOLA ===
+      console.group("[uploadAll] Respuesta del servidor");
+      console.log("Objeto completo:", results);
+      if (Array.isArray(results?.predictions)) {
+        console.table(
+          results.predictions.map((r) => ({
+            file_name: r.file_name,
+            predicted_class: r.predicted_class,
+            confidence: r.confidence,
+          }))
+        );
+      }
+      console.groupEnd();
+      // =======================
 
       // actualizar el estado con los resultados del servidor
       setPhotos((prev) =>
         prev.map((p) => {
-          const res = results.predictions.find((r: any) => r.file_name === `bottle-${p.id}.jpg`);
+          const res = results.predictions.find(
+            (r) => r.file_name === `bottle-${p.id}.jpg`
+          );
           if (res) {
-            return { ...p, status: "ok", prediction: res.predicted_class, confidence: res.confidence };
+            return {
+              ...p,
+              status: "ok",
+              prediction: res.predicted_class,
+              confidence: res.confidence,
+            };
           }
           return p;
         })
       );
     } catch (e: any) {
+      console.error("[uploadAll] Error al subir:", e);
       // si falla el bulk, marcar todos con error
       setPhotos((prev) =>
-        prev.map((p) => (pending.find((x) => x.id === p.id) ? { ...p, status: "error", error: e?.message || "Upload failed" } : p))
+        prev.map((p) =>
+          pending.find((x) => x.id === p.id)
+            ? { ...p, status: "error", error: e?.message || "Upload failed" }
+            : p
+        )
       );
+    } finally {
+      console.timeEnd("[uploadAll] Tiempo de subida");
     }
   };
-
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
@@ -290,7 +306,7 @@ export default function AlcoholLevelPage() {
               disabled={loading}
               className="flex-1 rounded-2xl bg-sky-700 px-6 py-4 text-lg font-semibold text-white hover:bg-sky-600 disabled:opacity-60"
             >
-              {loading ? "Opening…" : active ? "Restart (rear)" : "Open (rear)"}
+              {loading ? "Opening…" : active ? "Restart (rear)" : "Open"}
             </button>
 
             <button
@@ -298,7 +314,7 @@ export default function AlcoholLevelPage() {
               disabled={!active}
               className="flex-1 rounded-2xl bg-emerald-600 px-6 py-4 text-lg font-semibold text-white hover:bg-emerald-500 disabled:opacity-60"
             >
-              Capture (add to list)
+              Capture
             </button>
 
             <button
@@ -391,22 +407,24 @@ export default function AlcoholLevelPage() {
                   />
                   <div className="mt-2 text-xs text-slate-300">
                     <div>{new Date(p.createdAt).toLocaleString()}</div>
-                    {p.status === "ok" && <div className="text-emerald-300">Uploaded ✓</div>}
+                    {p.status === "ok" && (
+                      <div className="text-emerald-300">
+                        Uploaded ✓
+                        {typeof p.prediction === "string" && (
+                          <>
+                            {" · "}
+                            <span className="font-semibold">{p.prediction}</span>
+                            {typeof p.confidence === "number" && (
+                              <> ({(p.confidence * 100).toFixed(1)}%)</>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    )}
                     {p.status === "uploading" && <div className="text-indigo-300">Uploading…</div>}
                     {p.status === "error" && <div className="text-rose-300">Upload failed</div>}
                   </div>
                   <div className="mt-2 flex gap-2">
-                    <button
-                      onClick={() => uploadOne(p.id)}
-                      className="flex-1 rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-60"
-                      disabled={p.status === "uploading"}
-                    >
-                      {p.status === "uploading"
-                        ? "Uploading…"
-                        : p.status === "ok"
-                        ? "Uploaded ✓"
-                        : "Upload"}
-                    </button>
                     <button
                       onClick={() => deleteFromList(p.id)}
                       className="flex-1 rounded-md bg-rose-800 px-3 py-2 text-sm font-semibold text-white hover:bg-rose-700"
@@ -425,7 +443,6 @@ export default function AlcoholLevelPage() {
           )}
         </section>
       </main>
-
       <BottomNav />
     </div>
   );

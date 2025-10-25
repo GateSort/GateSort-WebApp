@@ -244,7 +244,7 @@ export default function FoodExpiryPage() {
               disabled={loading}
               className="flex-1 rounded-2xl bg-sky-700 px-6 py-4 text-lg font-semibold text-white hover:bg-sky-600 disabled:opacity-60"
             >
-              {loading ? "Opening…" : active ? "Restart (rear)" : "Open (rear)"}
+              {loading ? "Opening…" : active ? "Restart (rear)" : "Open"}
             </button>
 
             <button
@@ -252,7 +252,7 @@ export default function FoodExpiryPage() {
               disabled={!active}
               className="flex-1 rounded-2xl bg-emerald-600 px-6 py-4 text-lg font-semibold text-white hover:bg-emerald-500 disabled:opacity-60"
             >
-              Capture (add to list)
+              Capture
             </button>
 
             <button
