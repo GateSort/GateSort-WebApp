@@ -37,7 +37,7 @@ export const products = pgTable("products", {
 
 export const cartlayout = pgTable("cartlayout", {
   id: serial("id").primaryKey(),
-  airline_id: serial("airline_id").notNull().references(() => airlines.id),
+  airline_id: integer("airline_id").notNull().references(() => airlines.id),
   position: text("position").notNull(),
   expected_product_id: serial("expected_product_id").notNull().references(() => products.id)
 });

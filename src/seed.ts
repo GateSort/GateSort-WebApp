@@ -26,10 +26,10 @@ async function seed() {
 
     // Productos
     await db.insert(products).values([
-      { name: "Chocolate", expiration_date: "2025-12-31", type: "Snack" },
-      { name: "Agua 500ml", expiration_date: "2026-01-15", type: "Bebida" },
-      { name: "Galletas", expiration_date: "2025-11-30", type: "Snack" },
-      { name: "Jugo 250ml", expiration_date: "2025-10-31", type: "Bebida" },
+      { name: "Chocolate", expiration_date: "2025-12-31", type: "Snack", sticker_shape: "triangle", sticker_color: "prueba" },
+      { name: "Agua 500ml", expiration_date: "2026-01-15", type: "Bebida", sticker_shape: "triangle", sticker_color: "prueba" },
+      { name: "Galletas", expiration_date: "2025-11-30", type: "Snack", sticker_shape: "triangle", sticker_color: "prueba" },
+      { name: "Jugo 250ml", expiration_date: "2025-10-31", type: "Bebida", sticker_shape: "triangle", sticker_color: "prueba"},
     ]);
 
     // --------------------------
