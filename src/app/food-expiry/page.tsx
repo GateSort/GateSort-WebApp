@@ -6,19 +6,35 @@ import Header from "../../components/Header";
 import BottomNav from "../../components/BottomNav";
 
 type Facing = "environment" | "user";
+type UploadStatus = "idle" | "uploading" | "ok" | "error";
 
-export default function AlcoholLevelPage() {
+type PhotoItem = {
+  id: number;
+  url: string;       // Object URL for preview
+  blob: Blob;        // Image data
+  createdAt: number;
+  status: UploadStatus;
+  error?: string | null;
+};
+
+export default function FoodExpiryPage() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const idCounterRef = useRef(1);
 
   const [active, setActive] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [facingMode, setFacingMode] = useState<Facing>("environment");
 
+  // Latest preview (no upload-latest)
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [photoBlob, setPhotoBlob] = useState<Blob | null>(null);
 
+  // Gallery list
+  const [photos, setPhotos] = useState<PhotoItem[]>([]);
+
+  // ===== Camera control =====
   const stopCamera = () => {
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
@@ -30,6 +46,7 @@ export default function AlcoholLevelPage() {
     return () => {
       stopCamera();
       if (photoUrl) URL.revokeObjectURL(photoUrl);
+      photos.forEach((p) => URL.revokeObjectURL(p.url));
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -40,44 +57,41 @@ export default function AlcoholLevelPage() {
       setError(null);
       stopCamera();
 
-      // Strict attempt
-      const strictConstraints: MediaStreamConstraints = {
+      const strict: MediaStreamConstraints = {
         video: { facingMode: { exact: mode }, width: { ideal: 1280 }, height: { ideal: 720 } },
         audio: false,
       };
-      // Fallback attempt
-      const idealConstraints: MediaStreamConstraints = {
+      const ideal: MediaStreamConstraints = {
         video: { facingMode: mode, width: { ideal: 1280 }, height: { ideal: 720 } },
         audio: false,
       };
 
       let stream: MediaStream | null = null;
       try {
-        stream = await navigator.mediaDevices.getUserMedia(strictConstraints);
+        stream = await navigator.mediaDevices.getUserMedia(strict);
       } catch {
-        stream = await navigator.mediaDevices.getUserMedia(idealConstraints);
+        stream = await navigator.mediaDevices.getUserMedia(ideal);
       }
 
-      // If we asked for rear but got front, try choosing a "back/rear/environment" device explicitly
+      // Try to force rear device if needed
       if (mode === "environment" && stream) {
         const track = stream.getVideoTracks()[0];
         const settings = track.getSettings();
         if (settings.facingMode !== "environment" && navigator.mediaDevices.enumerateDevices) {
           try {
             const devices = await navigator.mediaDevices.enumerateDevices();
-            const candidates = devices.filter(
+            const rear = devices.find(
               (d) => d.kind === "videoinput" && /back|rear|environment/i.test(d.label || "")
             );
-            if (candidates.length) {
+            if (rear) {
               stream.getTracks().forEach((t) => t.stop());
-              const alt = await navigator.mediaDevices.getUserMedia({
-                video: { deviceId: { exact: candidates[0].deviceId }, width: { ideal: 1280 }, height: { ideal: 720 } },
+              stream = await navigator.mediaDevices.getUserMedia({
+                video: { deviceId: { exact: rear.deviceId }, width: { ideal: 1280 }, height: { ideal: 720 } },
                 audio: false,
               });
-              stream = alt;
             }
           } catch {
-            // Ignore if labels are not available yet or enumeration fails
+            /* ignore */
           }
         }
       }
@@ -91,7 +105,7 @@ export default function AlcoholLevelPage() {
       setActive(true);
       setFacingMode(mode);
 
-      // Reset previous photo
+      // reset latest preview
       if (photoUrl) {
         URL.revokeObjectURL(photoUrl);
         setPhotoUrl(null);
@@ -111,15 +125,10 @@ export default function AlcoholLevelPage() {
     }
   };
 
-  const flipCamera = () => {
-    const next: Facing = facingMode === "environment" ? "user" : "environment";
-    startCamera(next);
-  };
-
+  // ===== Capture & list handling =====
   const capturePhoto = async () => {
     if (!videoRef.current) return;
     const video = videoRef.current;
-
     const w = video.videoWidth || 1280;
     const h = video.videoHeight || 720;
 
@@ -135,30 +144,83 @@ export default function AlcoholLevelPage() {
     canvas.toBlob(
       (blob) => {
         if (!blob) return;
+
+        // latest preview
         if (photoUrl) URL.revokeObjectURL(photoUrl);
         const url = URL.createObjectURL(blob);
         setPhotoUrl(url);
         setPhotoBlob(blob);
+
+        // add to gallery
+        const item: PhotoItem = {
+          id: idCounterRef.current++,
+          url,
+          blob,
+          createdAt: Date.now(),
+          status: "idle",
+          error: null,
+        };
+        setPhotos((prev) => [item, ...prev]);
       },
       "image/jpeg",
       0.9
     );
   };
 
-  const downloadPhoto = () => {
-    if (!photoBlob || !photoUrl) return;
-    const a = document.createElement("a");
-    a.href = photoUrl;
-    a.download = `capture-${Date.now()}.jpg`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-  };
-
   const retake = () => {
     if (photoUrl) URL.revokeObjectURL(photoUrl);
     setPhotoUrl(null);
     setPhotoBlob(null);
+  };
+
+  const deleteFromList = (id: number) => {
+    setPhotos((prev) => {
+      const target = prev.find((p) => p.id === id);
+      if (target) URL.revokeObjectURL(target.url);
+      return prev.filter((p) => p.id !== id);
+    });
+  };
+
+  const clearAll = () => {
+    photos.forEach((p) => URL.revokeObjectURL(p.url));
+    setPhotos([]);
+  };
+
+  // ===== Upload helpers =====
+  const API_BASE = (process.env.NEXT_PUBLIC_API_URL ?? "").trim(); // e.g. http://localhost:3001
+  const ENDPOINT = `${API_BASE}/api/food/scan`; // <-- adjust to your real route
+
+  const uploadBlob = async (blob: Blob, filename: string) => {
+    const form = new FormData();
+    form.append("photo", blob, filename); // change "photo" if your API expects a different field
+    const res = await fetch(ENDPOINT, { method: "POST", body: form });
+    if (!res.ok) throw new Error(await res.text().catch(() => `HTTP ${res.status}`));
+    return res.json().catch(() => ({} as any));
+  };
+
+  const uploadOne = async (id: number) => {
+    setPhotos((prev) =>
+      prev.map((p) => (p.id === id ? { ...p, status: "uploading", error: null } : p))
+    );
+    const target = photos.find((p) => p.id === id);
+    if (!target) return;
+    try {
+      await uploadBlob(target.blob, `capture-${id}.jpg`);
+      setPhotos((prev) => prev.map((p) => (p.id === id ? { ...p, status: "ok" } : p)));
+    } catch (e: any) {
+      setPhotos((prev) =>
+        prev.map((p) =>
+          p.id === id ? { ...p, status: "error", error: e?.message || "Upload failed" } : p
+        )
+      );
+    }
+  };
+
+  const uploadAll = async () => {
+    const pending = photos.filter((p) => p.status === "idle" || p.status === "error");
+    for (const p of pending) {
+      await uploadOne(p.id);
+    }
   };
 
   return (
@@ -171,8 +233,7 @@ export default function AlcoholLevelPage() {
             ←
           </Link>
           <div>
-            <h2 className="text-3xl font-semibold">Alcohol Level Detection</h2>
-            <p className="text-slate-300">Rear camera with capture</p>
+            <h2 className="text-3xl font-semibold">Food Expiration Detection</h2>
           </div>
         </div>
 
@@ -187,19 +248,11 @@ export default function AlcoholLevelPage() {
             </button>
 
             <button
-              onClick={flipCamera}
-              disabled={!active}
-              className="flex-1 rounded-2xl bg-slate-700 px-6 py-4 text-lg font-semibold text-white hover:bg-slate-600 disabled:opacity-60"
-            >
-              Flip ({facingMode === "environment" ? "to front" : "to rear"})
-            </button>
-
-            <button
               onClick={capturePhoto}
               disabled={!active}
               className="flex-1 rounded-2xl bg-emerald-600 px-6 py-4 text-lg font-semibold text-white hover:bg-emerald-500 disabled:opacity-60"
             >
-              Capture
+              Capture (add to list)
             </button>
 
             <button
@@ -221,10 +274,10 @@ export default function AlcoholLevelPage() {
             />
           </div>
 
-          {/* Captured photo preview */}
+          {/* Latest preview (no upload-latest) */}
           {photoUrl && (
             <div className="mt-6">
-              <p className="mb-2 text-sm text-slate-300">Captured photo:</p>
+              <p className="mb-2 text-sm text-slate-300">Latest capture:</p>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={photoUrl}
@@ -233,16 +286,10 @@ export default function AlcoholLevelPage() {
               />
               <div className="mt-4 flex flex-col gap-3 sm:flex-row">
                 <button
-                  onClick={downloadPhoto}
-                  className="flex-1 rounded-xl bg-slate-700 px-4 py-3 font-semibold text-white hover:bg-slate-600"
-                >
-                  Download
-                </button>
-                <button
                   onClick={retake}
                   className="flex-1 rounded-xl bg-slate-700 px-4 py-3 font-semibold text-white hover:bg-slate-600"
                 >
-                  Retake
+                  Retake (clear preview)
                 </button>
               </div>
             </div>
@@ -259,13 +306,71 @@ export default function AlcoholLevelPage() {
           </p>
         </div>
 
+        {/* Gallery with per-item upload */}
         <section className="mt-8 rounded-2xl bg-slate-900 p-6 ring-1 ring-black/5">
-          <h3 className="text-xl font-semibold">How to Use</h3>
-          <ol className="mt-4 list-decimal space-y-2 pl-6 text-slate-300">
-            <li>Click <strong>Open (rear)</strong> to start the rear camera.</li>
-            <li>Use <strong>Capture</strong> to take a photo.</li>
-            <li>Use <strong>Download</strong> or <strong>Retake</strong> as needed.</li>
-          </ol>
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="text-xl font-semibold">Captured photos</h3>
+            <div className="flex gap-2">
+              <button
+                onClick={uploadAll}
+                disabled={photos.length === 0}
+                className="rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-50"
+              >
+                Upload all
+              </button>
+              <button
+                onClick={clearAll}
+                disabled={photos.length === 0}
+                className="rounded-md bg-slate-700 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-600 disabled:opacity-50"
+              >
+                Clear all
+              </button>
+            </div>
+          </div>
+
+          {photos.length === 0 ? (
+            <p className="text-slate-400">No photos captured yet.</p>
+          ) : (
+            <ul className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
+              {photos.map((p) => (
+                <li key={p.id} className="rounded-xl border border-slate-700 p-3">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={p.url}
+                    alt={`capture-${p.id}`}
+                    className="h-48 w-full rounded-lg object-cover"
+                  />
+                  <div className="mt-2 text-xs text-slate-300">
+                    <div>{new Date(p.createdAt).toLocaleString()}</div>
+                  </div>
+                  <div className="mt-2 flex gap-2">
+                    <button
+                      onClick={() => uploadOne(p.id)}
+                      className="flex-1 rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-60"
+                      disabled={p.status === "uploading"}
+                    >
+                      {p.status === "uploading"
+                        ? "Uploading…"
+                        : p.status === "ok"
+                        ? "Uploaded ✓"
+                        : "Upload"}
+                    </button>
+                    <button
+                      onClick={() => deleteFromList(p.id)}
+                      className="flex-1 rounded-md bg-rose-800 px-3 py-2 text-sm font-semibold text-white hover:bg-rose-700"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                  {p.status === "error" && p.error && (
+                    <div className="mt-2 rounded-md bg-rose-900/40 p-2 text-xs text-rose-200">
+                      {p.error}
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
         </section>
       </main>
 
