@@ -188,7 +188,7 @@ export default function FoodExpiryPage() {
 
   // ===== Upload helpers =====
   const API_BASE = (process.env.NEXT_PUBLIC_API_URL ?? "").trim(); // e.g. http://localhost:3001
-  const ENDPOINT = `${API_BASE}/api/food/scan`; // <-- adjust to your real route
+  const ENDPOINT = `${API_BASE}/predict`; // <-- adjust to your real route
 
   const uploadBlob = async (blob: Blob, filename: string) => {
     const form = new FormData();
