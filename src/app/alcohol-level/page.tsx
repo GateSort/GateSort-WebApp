@@ -397,17 +397,6 @@ export default function AlcoholLevelPage() {
                   </div>
                   <div className="mt-2 flex gap-2">
                     <button
-                      onClick={() => uploadOne(p.id)}
-                      className="flex-1 rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-60"
-                      disabled={p.status === "uploading"}
-                    >
-                      {p.status === "uploading"
-                        ? "Uploading…"
-                        : p.status === "ok"
-                        ? "Uploaded ✓"
-                        : "Upload"}
-                    </button>
-                    <button
                       onClick={() => deleteFromList(p.id)}
                       className="flex-1 rounded-md bg-rose-800 px-3 py-2 text-sm font-semibold text-white hover:bg-rose-700"
                     >
@@ -425,7 +414,6 @@ export default function AlcoholLevelPage() {
           )}
         </section>
       </main>
-
       <BottomNav />
     </div>
   );
