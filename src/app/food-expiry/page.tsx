@@ -32,12 +32,37 @@ export default function FoodExpiryPage() {
 
   const [photos, setPhotos] = useState<PhotoItem[]>([]);
 
+  // === Aspect ratio real del stream (ancho/alto)
+  const [ar, setAr] = useState<number | null>(null);
+
+  // ===== Helpers de orientación/constraints =====
+  function isPortraitWindow() {
+    if (typeof window === "undefined") return false;
+    return (
+      window.matchMedia?.("(orientation: portrait)")?.matches ||
+      window.innerHeight > window.innerWidth
+    );
+  }
+
+  function buildConstraints(mode: Facing): MediaStreamConstraints {
+    const portrait = isPortraitWindow();
+    const size = portrait
+      ? { width: { ideal: 720 }, height: { ideal: 1280 } } // alto > ancho
+      : { width: { ideal: 1280 }, height: { ideal: 720 } };
+
+    return {
+      video: { facingMode: mode, ...size },
+      audio: false,
+    };
+  }
+
   // ===== Cámara =====
   const stopCamera = () => {
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
     setActive(false);
+    setAr(null);
   };
 
   useEffect(() => {
@@ -49,23 +74,68 @@ export default function FoodExpiryPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Recalcular AR al rotar/redimensionar
+  useEffect(() => {
+    const onResize = () => {
+      const v = videoRef.current;
+      if (v?.videoWidth && v?.videoHeight) {
+        setAr(v.videoWidth / v.videoHeight);
+      } else {
+        setAr(null); // usará fallback 9/16 o 16/9
+      }
+    };
+    window.addEventListener("orientationchange", onResize);
+    window.addEventListener("resize", onResize);
+    return () => {
+      window.removeEventListener("orientationchange", onResize);
+      window.removeEventListener("resize", onResize);
+    };
+  }, []);
+
   const startCamera = async () => {
     try {
       setLoading(true);
       setError(null);
       stopCamera();
 
-      const ideal: MediaStreamConstraints = {
-        video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } },
+      const mode: Facing = "environment";
+      // 1º intento: solo facing exacto
+      const strict: MediaStreamConstraints = {
+        video: { facingMode: { exact: mode } },
         audio: false,
       };
+      const ideal = buildConstraints(mode);
 
-      const stream = await navigator.mediaDevices.getUserMedia(ideal);
-      streamRef.current = stream;
+      let stream: MediaStream | null = null;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia(strict);
+      } catch {
+        // 2º intento: dimensiones según orientación
+        stream = await navigator.mediaDevices.getUserMedia(ideal);
+      }
+
+      streamRef.current = stream!;
       if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.playsInline = true;
-        await videoRef.current.play().catch(() => {});
+        const v = videoRef.current;
+        v.srcObject = stream!;
+        v.playsInline = true;
+
+        const onMeta = () => {
+          if (v.videoWidth && v.videoHeight) {
+            setAr(v.videoWidth / v.videoHeight);
+          }
+        };
+        v.addEventListener("loadedmetadata", onMeta, { once: true });
+
+        await v.play().catch(() => {});
+
+        const track = stream!.getVideoTracks()[0];
+        const s = track.getSettings();
+        if (typeof s.aspectRatio === "number") {
+          setAr(s.aspectRatio);
+        } else if (v.videoWidth && v.videoHeight) {
+          setAr(v.videoWidth / v.videoHeight);
+        }
       }
       setActive(true);
 
@@ -160,7 +230,7 @@ export default function FoodExpiryPage() {
         </div>
 
         <div className="rounded-2xl bg-slate-800 p-6 ring-1 ring-black/5">
-          {/* === Botones: mismas clases/tamaño que Alcohol Level === */}
+          {/* === Botones === */}
           <div className="flex flex-row flex-wrap items-stretch gap-3">
             <button
               onClick={startCamera}
@@ -199,14 +269,25 @@ export default function FoodExpiryPage() {
             </button>
           </div>
 
-          {/* Video en vivo */}
+          {/* Video en vivo: SIN barras negras; usa el aspecto real del stream */}
           <div className="mt-6 rounded-xl border border-slate-700 bg-black/40 p-3">
-            <video
-              ref={videoRef}
-              className="mx-auto aspect-video h-auto w-full max-w-3xl rounded-lg bg-black object-contain"
-              muted
-              playsInline
-            />
+            <div
+              className="mx-auto w-full max-w-3xl"
+              style={
+                ar
+                  ? { aspectRatio: ar }
+                  : isPortraitWindow()
+                  ? { aspectRatio: 9 / 16 }
+                  : { aspectRatio: 16 / 9 }
+              }
+            >
+              <video
+                ref={videoRef}
+                className="h-full w-full rounded-lg bg-black object-cover"
+                muted
+                playsInline
+              />
+            </div>
           </div>
 
           <p className="mt-3 text-center text-sm text-slate-300">
