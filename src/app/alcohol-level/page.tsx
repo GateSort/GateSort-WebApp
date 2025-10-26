@@ -5,6 +5,7 @@ import Link from "next/link";
 import Header from "../../components/Header";
 import BottomNav from "../../components/BottomNav";
 import { Play, Camera, Square } from "lucide-react"; // ← ICONOS
+import { speakWithElevenLabs } from "../../lib/elevenlabsClient";
 
 type Facing = "environment" | "user";
 type UploadStatus = "idle" | "uploading" | "ok" | "error";
@@ -389,6 +390,13 @@ export default function AlcoholLevelPage() {
         );
       }
       console.groupEnd();
+      // LECTURA CON ELEVENLABS 🔊
+      if (Array.isArray(results)) {
+        for (const r of results) {
+          const msg = `The bottle ${r.filename} is ${r.prediction}. Recommended action: ${r.action}.`;
+          await speakWithElevenLabs(msg);
+        }
+      }
 
       // Actualizar estado por filename
       setPhotos((prev) =>
