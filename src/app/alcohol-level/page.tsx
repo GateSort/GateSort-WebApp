@@ -551,11 +551,11 @@ export default function AlcoholLevelPage() {
               }
             >
               <video
-              ref={videoRef}
-              className="mx-auto aspect-video h-auto w-full max-w-3xl rounded-lg bg-black object-contain"
-              muted
-              playsInline
-            />
+                ref={videoRef}
+                className="h-full w-full rounded-lg bg-black object-cover"
+                muted
+                playsInline
+              />
             </div>
           </div>
 
