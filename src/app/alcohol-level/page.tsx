@@ -4,9 +4,13 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import Header from "../../components/Header";
 import BottomNav from "../../components/BottomNav";
+import { Play, Camera, Square } from "lucide-react"; // ← ICONOS
 
 type Facing = "environment" | "user";
 type UploadStatus = "idle" | "uploading" | "ok" | "error";
+
+type PredictionLabel = "full" | "medium" | "empty";
+type ActionLabel = "keep" | "discard";
 
 type PhotoItem = {
   id: number;
@@ -15,18 +19,21 @@ type PhotoItem = {
   createdAt: number;
   status: UploadStatus;
   error?: string | null;
-  // Campos opcionales para mostrar resultados del servidor
-  prediction?: string;
-  confidence?: number;
+  // Campos con resultados del servidor
+  prediction?: PredictionLabel;
+  action?: ActionLabel;
 };
 
-// Tipar la respuesta del servidor (mejor DX)
-type ServerPrediction = {
-  file_name: string;
-  predicted_class: string;
-  confidence: number;
+// === Tipos del backend (contrato) ===
+type BottlePrediction = {
+  filename: string;                 // p.ej. "bottle-3.jpg"
+  prediction: PredictionLabel;      // "full" | "medium" | "empty"
+  action: ActionLabel;              // "keep" | "discard"
 };
 
+type ServerResponse = { results: BottlePrediction[] } | BottlePrediction[];
+
+// ======================== Componente ========================
 export default function AlcoholLevelPage() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -43,6 +50,19 @@ export default function AlcoholLevelPage() {
 
   // Gallery list
   const [photos, setPhotos] = useState<PhotoItem[]>([]);
+
+  // ===== Helpers visuales =====
+  const bgClassesForAction = (action?: ActionLabel) => {
+    if (action === "keep") return "bg-emerald-900/30 ring-emerald-700/50";
+    if (action === "discard") return "bg-rose-900/30 ring-rose-700/50";
+    return "bg-slate-800/40 ring-slate-700/60"; // neutro si aún no hay resultado
+  };
+
+  // Texto para prediction/action
+  const labelPrediction = (p?: PredictionLabel) =>
+    p ? (p === "full" ? "full" : p === "medium" ? "medium" : "empty") : "—";
+  const labelAction = (a?: ActionLabel) =>
+    a ? (a === "keep" ? "keep" : "discard") : "—";
 
   // ===== Camera control =====
   const stopCamera = () => {
@@ -83,7 +103,7 @@ export default function AlcoholLevelPage() {
         stream = await navigator.mediaDevices.getUserMedia(ideal);
       }
 
-      // Try to force rear device if needed
+      // Forzar trasera si es posible
       if (mode === "environment" && stream) {
         const track = stream.getVideoTracks()[0];
         const settings = track.getSettings();
@@ -200,11 +220,22 @@ export default function AlcoholLevelPage() {
   const API_BASE = (process.env.NEXT_PUBLIC_API_URL ?? "").trim(); // e.g. http://localhost:3001
   const ENDPOINT = `${API_BASE}/predict`; // <-- ajusta a tu ruta real
 
+  // Normaliza distintas formas de respuesta del backend hacia { results: BottlePrediction[] }
+  const parseServerJson = (data: ServerResponse): { results: BottlePrediction[] } => {
+    if (Array.isArray(data)) {
+      return { results: data };
+    }
+    if (Array.isArray((data as any)?.results)) {
+      return { results: (data as any).results };
+    }
+    // fallback vacío si viene algo inesperado
+    return { results: [] };
+  };
+
   const uploadBlobs = async (items: { blob: Blob; id: number }[]) => {
     const form = new FormData();
-
     items.forEach((item) => {
-      form.append("images", item.blob, `bottle-${item.id}.jpg`); // el campo debe coincidir con Flask
+      form.append("images", item.blob, `bottle-${item.id}.jpg`); // debe coincidir con Flask
     });
 
     console.groupCollapsed("[uploadBlobs] Enviando imágenes");
@@ -215,13 +246,13 @@ export default function AlcoholLevelPage() {
     const res = await fetch(ENDPOINT, { method: "POST", body: form });
     if (!res.ok) throw new Error(await res.text().catch(() => `HTTP ${res.status}`));
 
-    // devuelve { predictions: [...] }
-    return res.json() as Promise<{ predictions: ServerPrediction[] }>;
+    const raw = (await res.json().catch(() => null)) as ServerResponse | null;
+    const normalized = raw ? parseServerJson(raw) : { results: [] };
+    return normalized; // { results: BottlePrediction[] }
   };
 
   const uploadAll = async () => {
     const pending = photos.filter((p) => p.status === "idle" || p.status === "error");
-
     if (pending.length === 0) {
       console.info("[uploadAll] No hay fotos pendientes por subir.");
       return;
@@ -234,37 +265,35 @@ export default function AlcoholLevelPage() {
       )
     );
 
-    console.time("[uploadAll] Tiempo de subida");
+    console.time("[uploadAll] Tiempo de subida]");
     try {
-      const results = await uploadBlobs(pending.map((p) => ({ blob: p.blob, id: p.id })));
+      const { results } = await uploadBlobs(pending.map((p) => ({ blob: p.blob, id: p.id })));
 
-      // === LOGS EN CONSOLA ===
+      // Logs
       console.group("[uploadAll] Respuesta del servidor");
-      console.log("Objeto completo:", results);
-      if (Array.isArray(results?.predictions)) {
+      console.log("Objeto completo (normalizado):", results);
+      if (Array.isArray(results)) {
         console.table(
-          results.predictions.map((r) => ({
-            file_name: r.file_name,
-            predicted_class: r.predicted_class,
-            confidence: r.confidence,
+          results.map((r) => ({
+            filename: r.filename,
+            prediction: r.prediction,
+            action: r.action,
           }))
         );
       }
       console.groupEnd();
-      // =======================
 
-      // actualizar el estado con los resultados del servidor
+      // Actualizar estado por filename
       setPhotos((prev) =>
         prev.map((p) => {
-          const res = results.predictions.find(
-            (r) => r.file_name === `bottle-${p.id}.jpg`
-          );
-          if (res) {
+          const filename = `bottle-${p.id}.jpg`;
+          const match = results.find((r) => r.filename === filename);
+          if (match) {
             return {
               ...p,
               status: "ok",
-              prediction: res.predicted_class,
-              confidence: res.confidence,
+              prediction: match.prediction,
+              action: match.action,
             };
           }
           return p;
@@ -272,7 +301,6 @@ export default function AlcoholLevelPage() {
       );
     } catch (e: any) {
       console.error("[uploadAll] Error al subir:", e);
-      // si falla el bulk, marcar todos con error
       setPhotos((prev) =>
         prev.map((p) =>
           pending.find((x) => x.id === p.id)
@@ -281,7 +309,7 @@ export default function AlcoholLevelPage() {
         )
       );
     } finally {
-      console.timeEnd("[uploadAll] Tiempo de subida");
+      console.timeEnd("[uploadAll] Tiempo de subida]");
     }
   };
 
@@ -300,29 +328,42 @@ export default function AlcoholLevelPage() {
         </div>
 
         <div className="rounded-2xl bg-slate-800 p-6 ring-1 ring-black/5">
-          <div className="flex flex-col gap-3 sm:flex-row">
+          {/* Controles: una sola fila + íconos */}
+          <div className="flex flex-row flex-wrap items-stretch gap-3">
             <button
               onClick={() => startCamera("environment")}
               disabled={loading}
               className="flex-1 rounded-2xl bg-sky-700 px-6 py-4 text-lg font-semibold text-white hover:bg-sky-600 disabled:opacity-60"
+              aria-label={loading ? "Opening…" : active ? "Restart (rear)" : ""}
             >
-              {loading ? "Opening…" : active ? "Restart (rear)" : "Open"}
+              <span className="flex items-center justify-center gap-2">
+                <Play className="h-5 w-5" aria-hidden="true" />
+                <span>{loading ? "Opening…" : active ? "" : ""}</span>
+              </span>
             </button>
 
             <button
               onClick={capturePhoto}
               disabled={!active}
               className="flex-1 rounded-2xl bg-emerald-600 px-6 py-4 text-lg font-semibold text-white hover:bg-emerald-500 disabled:opacity-60"
+              aria-label="Capture"
             >
-              Capture
+              <span className="flex items-center justify-center gap-2">
+                <Camera className="h-5 w-5" aria-hidden="true" />
+                <span></span>
+              </span>
             </button>
 
             <button
               onClick={stopCamera}
               disabled={!active}
               className="flex-1 rounded-2xl bg-rose-800 px-6 py-4 text-lg font-semibold text-white hover:bg-rose-700 disabled:opacity-60"
+              aria-label="Stop"
             >
-              Stop
+              <span className="flex items-center justify-center gap-2">
+                <Square className="h-5 w-5" aria-hidden="true" />
+                <span></span>
+              </span>
             </button>
           </div>
 
@@ -330,7 +371,7 @@ export default function AlcoholLevelPage() {
           <div className="mt-6 rounded-xl border border-slate-700 bg-black/40 p-3">
             <video
               ref={videoRef}
-              className="mx-auto aspect-video h-auto w-full max-w-3xl rounded-lg bg-black object-contain"
+              className="mx-auto aspect-video w-full max-w-3xl rounded-lg bg-black object-cover"
               muted
               playsInline
             />
@@ -399,31 +440,50 @@ export default function AlcoholLevelPage() {
             <ul className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
               {photos.map((p) => (
                 <li key={p.id} className="rounded-xl border border-slate-700 p-3">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={p.url}
-                    alt={`capture-${p.id}`}
-                    className="h-48 w-full rounded-lg object-cover"
-                  />
+                  {/* Bloque de fondo que cambia según action */}
+                  <div
+                    className={`relative rounded-lg ring-1 p-1 transition-colors ${bgClassesForAction(p.action)}`}
+                    aria-label={
+                      p.action
+                        ? (p.action === "keep" ? "Resultado: mantener" : "Resultado: descartar")
+                        : "Sin resultado"
+                    }
+                  >
+                    {/* Imagen */}
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={p.url}
+                      alt={`capture-${p.id}`}
+                      className="h-48 w-full rounded-md object-cover"
+                    />
+                  </div>
+
                   <div className="mt-2 text-xs text-slate-300">
                     <div>{new Date(p.createdAt).toLocaleString()}</div>
+
                     {p.status === "ok" && (
                       <div className="text-emerald-300">
                         Uploaded ✓
-                        {typeof p.prediction === "string" && (
+                        {(p.prediction || p.action) && (
                           <>
                             {" · "}
-                            <span className="font-semibold">{p.prediction}</span>
-                            {typeof p.confidence === "number" && (
-                              <> ({(p.confidence * 100).toFixed(1)}%)</>
-                            )}
+                            <span className="font-semibold">prediction:</span> {labelPrediction(p.prediction)}
+                            {" · "}
+                            <span className="font-semibold">action:</span> {labelAction(p.action)}
                           </>
                         )}
                       </div>
                     )}
-                    {p.status === "uploading" && <div className="text-indigo-300">Uploading…</div>}
-                    {p.status === "error" && <div className="text-rose-300">Upload failed</div>}
+
+                    {p.status === "uploading" && (
+                      <div className="text-indigo-300">Uploading…</div>
+                    )}
+
+                    {p.status === "error" && (
+                      <div className="text-rose-300">Upload failed</div>
+                    )}
                   </div>
+
                   <div className="mt-2 flex gap-2">
                     <button
                       onClick={() => deleteFromList(p.id)}
@@ -432,6 +492,7 @@ export default function AlcoholLevelPage() {
                       Delete
                     </button>
                   </div>
+
                   {p.status === "error" && p.error && (
                     <div className="mt-2 rounded-md bg-rose-900/40 p-2 text-xs text-rose-200">
                       {p.error}
