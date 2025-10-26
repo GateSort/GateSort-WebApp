@@ -103,7 +103,6 @@ export default function AlcoholLevelPage() {
         stream = await navigator.mediaDevices.getUserMedia(ideal);
       }
 
-      // Forzar trasera si es posible
       if (mode === "environment" && stream) {
         const track = stream.getVideoTracks()[0];
         const settings = track.getSettings();
