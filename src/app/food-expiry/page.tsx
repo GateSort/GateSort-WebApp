@@ -74,6 +74,7 @@ export default function FoodExpiryPage() {
         setPhotoUrl(null);
         setPhotoBlob(null);
       }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       const msg =
         e?.name === "NotAllowedError"
