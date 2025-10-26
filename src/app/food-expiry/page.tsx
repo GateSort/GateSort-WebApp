@@ -28,8 +28,6 @@ export default function FoodExpiryPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
-  const [photoBlob, setPhotoBlob] = useState<Blob | null>(null);
-
   const [photos, setPhotos] = useState<PhotoItem[]>([]);
 
   // === Aspect ratio real del stream (ancho/alto)
@@ -142,16 +140,24 @@ export default function FoodExpiryPage() {
       if (photoUrl) {
         URL.revokeObjectURL(photoUrl);
         setPhotoUrl(null);
-        setPhotoBlob(null);
       }
-    } catch (e: any) {
-      const msg =
-        e?.name === "NotAllowedError"
-          ? "Permission denied. Please allow camera access."
-          : e?.name === "NotFoundError"
-          ? "No camera found."
-          : "Failed to start the camera.";
-      setError(`${msg}${e?.message ? ` (${e.message})` : ""}`);
+    } catch (err: unknown) {
+      // Narrow seguro sin usar 'any'
+      let userMsg = "Failed to start the camera.";
+      if (typeof err === "object" && err !== null && "name" in err) {
+        const name = String((err as { name?: string }).name);
+        userMsg =
+          name === "NotAllowedError"
+            ? "Permission denied. Please allow camera access."
+            : name === "NotFoundError"
+            ? "No camera found."
+            : "Failed to start the camera.";
+      }
+      const details =
+        typeof err === "object" && err !== null && "message" in err
+          ? String((err as { message?: string }).message)
+          : "";
+      setError(`${userMsg}${details ? ` (${details})` : ""}`);
       stopCamera();
     } finally {
       setLoading(false);
@@ -178,8 +184,6 @@ export default function FoodExpiryPage() {
 
         if (photoUrl) URL.revokeObjectURL(photoUrl);
         const url = URL.createObjectURL(blob);
-        setPhotoUrl(url);
-        setPhotoBlob(blob);
 
         const item: PhotoItem = {
           id: idCounterRef.current++,
@@ -190,16 +194,11 @@ export default function FoodExpiryPage() {
           error: null,
         };
         setPhotos((prev) => [item, ...prev]);
+        setPhotoUrl(url);
       },
       "image/jpeg",
       0.9
     );
-  };
-
-  const retake = () => {
-    if (photoUrl) URL.revokeObjectURL(photoUrl);
-    setPhotoUrl(null);
-    setPhotoBlob(null);
   };
 
   const deleteFromList = (id: number) => {
@@ -289,6 +288,12 @@ export default function FoodExpiryPage() {
               />
             </div>
           </div>
+
+          {error && (
+            <div className="mt-4 rounded-xl bg-rose-900/40 p-3 text-rose-200 ring-1 ring-rose-900/60">
+              {error}
+            </div>
+          )}
 
           <p className="mt-3 text-center text-sm text-slate-300">
             Note: on iOS/Safari, the camera can only start after a user gesture (click/tap).
