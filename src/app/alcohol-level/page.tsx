@@ -9,6 +9,15 @@ import { speakWithElevenLabs } from "../../lib/elevenlabsClient";
 
 type Facing = "environment" | "user";
 type UploadStatus = "idle" | "uploading" | "ok" | "error";
+declare global {
+  namespace JSX {
+    interface IntrinsicElements {
+      "elevenlabs-convai": React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> & {
+        "agent-id"?: string;
+      };
+    }
+  }
+}
 
 type PredictionLabel = "full" | "medium" | "empty";
 type ActionLabel = "keep" | "discard";
@@ -680,6 +689,10 @@ export default function AlcoholLevelPage() {
               ))}
             </ul>
           )}
+        </section>
+        <section className="mt-8">
+          {/* @ts-ignore - custom element not declared in JSX.IntrinsicElements */}
+          <elevenlabs-convai agent-id="agent_2701k8fdcqk5ey4aet77zm7pwzyh" />
         </section>
       </main>
       <BottomNav />

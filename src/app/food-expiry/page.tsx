@@ -5,9 +5,20 @@ import Link from "next/link";
 import Header from "../../components/Header";
 import BottomNav from "../../components/BottomNav";
 import { Play, Camera, Square } from "lucide-react";
+import { speakWithElevenLabs } from "../../lib/elevenlabsClient";
 
 type Facing = "environment" | "user";
 type UploadStatus = "idle" | "uploading" | "ok" | "error";
+
+declare global {
+  namespace JSX {
+    interface IntrinsicElements {
+      "elevenlabs-convai": React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> & {
+        "agent-id"?: string;
+      };
+    }
+  }
+}
 
 type Detail = { shape: string; color: string; count: number };
 
@@ -73,7 +84,16 @@ export default function AlcoholLevelPage() {
   }, [airlineQuery]);
   useEffect(() => setHighlightIndex(0), [airlineQuery]);
   const onSelectAirline = (name: string) => { setAirlineQuery(name); setOpenList(false); };
-
+  useEffect(() => {
+    const script = document.createElement("script");
+    script.src = "https://unpkg.com/@elevenlabs/convai-widget-embed";
+    script.async = true;
+    document.body.appendChild(script);
+    return () => {
+      document.body.removeChild(script);
+    };
+  }, []);
+  
   function isPortraitWindow() {
     if (typeof window === "undefined") return false;
     return window.matchMedia?.("(orientation: portrait)")?.matches || window.innerHeight > window.innerWidth;
@@ -428,6 +448,10 @@ export default function AlcoholLevelPage() {
               })}
             </ul>
           )}
+        </section>
+        <section className="mt-8">
+          {/* @ts-ignore - custom element not declared in JSX.IntrinsicElements */}
+          <elevenlabs-convai agent-id="agent_2701k8fdcqk5ey4aet77zm7pwzyh" />
         </section>
       </main>
 
