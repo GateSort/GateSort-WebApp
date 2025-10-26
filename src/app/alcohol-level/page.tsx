@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import Header from "../../components/Header";
 import BottomNav from "../../components/BottomNav";
@@ -31,7 +31,59 @@ type BottlePrediction = {
   action: ActionLabel;              // "keep" | "discard"
 };
 
+/* =========================================================
+   AEROLÍNEAS (SOLO NOMBRES) + helpers de búsqueda
+   ========================================================= */
+const AIRLINES: string[] = [
+  "Aeroméxico",
+  "Volaris",
+  "Viva Aerobus",
+  "American Airlines",
+];
+
+const normalize = (s: string) =>
+  s
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .replace(/[^a-z0-9]/gi, "")
+    .toUpperCase();
+
+function highlightMatch(text: string, query: string) {
+  if (!query) return text;
+  const nText = normalize(text);
+  const nQuery = normalize(query);
+  const idx = nText.indexOf(nQuery);
+  if (idx < 0) return text;
+
+  let alnumCount = 0;
+  let startOrig = 0;
+  let endOrig = text.length;
+  const start = idx;
+  const end = idx + nQuery.length;
+
+  for (let i = 0; i < text.length; i++) {
+    if (/[a-z0-9]/i.test(text[i])) {
+      if (alnumCount === start) startOrig = i;
+      if (alnumCount === end) {
+        endOrig = i;
+        break;
+      }
+      alnumCount++;
+    }
+  }
+  if (endOrig === text.length && alnumCount === end) endOrig = text.length;
+
+  return (
+    <>
+      {text.slice(0, startOrig)}
+      <span className="bg-yellow-300/30 rounded px-0.5">{text.slice(startOrig, endOrig)}</span>
+      {text.slice(endOrig)}
+    </>
+  );
+}
+
 // ======================== Componente ========================
+
 export default function AlcoholLevelPage() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -42,12 +94,10 @@ export default function AlcoholLevelPage() {
   const [error, setError] = useState<string | null>(null);
   const [facingMode, setFacingMode] = useState<Facing>("environment");
 
-  // Latest preview (no "upload latest")
-  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [photoBlob, setPhotoBlob] = useState<Blob | null>(null);
+  // Aspect ratio real del stream (ancho/alto)
+  const [ar, setAr] = useState<number | null>(null);
 
-  // Gallery list
+  // Galería
   const [photos, setPhotos] = useState<PhotoItem[]>([]);
 
   // ===== Helpers visuales =====
@@ -57,11 +107,27 @@ export default function AlcoholLevelPage() {
     return "bg-slate-800/40 ring-slate-700/60"; // neutro si aún no hay resultado
   };
 
-  // Texto para prediction/action
-  const labelPrediction = (p?: PredictionLabel) =>
-    p ? (p === "full" ? "full" : p === "medium" ? "medium" : "empty") : "—";
-  const labelAction = (a?: ActionLabel) =>
-    a ? (a === "keep" ? "keep" : "discard") : "—";
+  const labelAction = (a?: ActionLabel) => (a ? (a === "keep" ? "keep" : "discard") : "—");
+
+  /* ====== AUTOCOMPLETE AEROLÍNEAS (solo nombres) ====== */
+  const [airlineQuery, setAirlineQuery] = useState("");
+  const [highlightIndex, setHighlightIndex] = useState(0);
+  const [openList, setOpenList] = useState(false);
+
+  const filteredAirlines = useMemo(() => {
+    const q = normalize(airlineQuery);
+    const base = q ? AIRLINES.filter((name) => normalize(name).includes(q)) : AIRLINES;
+    return base.slice(0, 8);
+  }, [airlineQuery]);
+
+  useEffect(() => {
+    setHighlightIndex(0);
+  }, [airlineQuery]);
+
+  const onSelectAirline = (name: string) => {
+    setAirlineQuery(name); // solo nombre en el input
+    setOpenList(false);
+  };
 
   // ===== Camera control =====
   const stopCamera = () => {
@@ -69,12 +135,13 @@ export default function AlcoholLevelPage() {
     streamRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
     setActive(false);
+    setAr(null);
   };
 
   useEffect(() => {
     return () => {
       stopCamera();
-      if (photoUrl) URL.revokeObjectURL(photoUrl);
+      // revocar URLs de la galería
       photos.forEach((p) => URL.revokeObjectURL(p.url));
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -102,6 +169,7 @@ export default function AlcoholLevelPage() {
         stream = await navigator.mediaDevices.getUserMedia(ideal);
       }
 
+      // Intento de forzar cámara trasera en móviles si pidió "environment" y no se logró
       if (mode === "environment" && stream) {
         const track = stream.getVideoTracks()[0];
         const settings = track.getSettings();
@@ -118,27 +186,38 @@ export default function AlcoholLevelPage() {
                 audio: false,
               });
             }
-          } catch {
-            /* ignore */
-          }
+          } catch { /* ignore */ }
         }
       }
 
       streamRef.current = stream!;
       if (videoRef.current) {
-        videoRef.current.srcObject = stream!;
-        videoRef.current.playsInline = true;
-        await videoRef.current.play().catch(() => {});
+        const v = videoRef.current;
+        v.srcObject = stream!;
+        v.playsInline = true;
+
+        // Actualiza AR cuando se conozcan dimensiones del video
+        const onMeta = () => {
+          if (v.videoWidth && v.videoHeight) {
+            setAr(v.videoWidth / v.videoHeight);
+          }
+        };
+        v.addEventListener("loadedmetadata", onMeta, { once: true });
+
+        await v.play().catch(() => {});
+
+        // Si ya hay dimensiones, fija AR de inmediato
+        const track = stream!.getVideoTracks()[0];
+        const s = track.getSettings();
+        if (typeof s.aspectRatio === "number") {
+          setAr(s.aspectRatio);
+        } else if (v.videoWidth && v.videoHeight) {
+          setAr(v.videoWidth / v.videoHeight);
+        }
       }
+
       setActive(true);
       setFacingMode(mode);
-
-      // reset latest preview
-      if (photoUrl) {
-        URL.revokeObjectURL(photoUrl);
-        setPhotoUrl(null);
-        setPhotoBlob(null);
-      }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       const msg =
@@ -174,13 +253,8 @@ export default function AlcoholLevelPage() {
       (blob) => {
         if (!blob) return;
 
-        // latest preview
-        if (photoUrl) URL.revokeObjectURL(photoUrl);
+        // añadir directo a la galería
         const url = URL.createObjectURL(blob);
-        setPhotoUrl(url);
-        setPhotoBlob(blob);
-
-        // add to gallery
         const item: PhotoItem = {
           id: idCounterRef.current++,
           url,
@@ -194,12 +268,6 @@ export default function AlcoholLevelPage() {
       "image/jpeg",
       0.9
     );
-  };
-
-  const retake = () => {
-    if (photoUrl) URL.revokeObjectURL(photoUrl);
-    setPhotoUrl(null);
-    setPhotoBlob(null);
   };
 
   const deleteFromList = (id: number) => {
@@ -216,13 +284,13 @@ export default function AlcoholLevelPage() {
   };
 
   // Helper to convert Blob to base64
-  const blobToBase64 = (blob: Blob): Promise<string> => {
-    return new Promise((resolve, reject) => {
+  const blobToBase64 = (blob: Blob): Promise<string> =>
+    new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onloadend = () => {
         const base64 = reader.result;
         if (typeof base64 === "string") {
-          resolve(base64.split(",")[1]); // remove data:*/*;base64,
+          resolve(base64.split(",")[1]);
         } else {
           reject(new Error("Failed to convert blob to base64"));
         }
@@ -230,26 +298,27 @@ export default function AlcoholLevelPage() {
       reader.onerror = reject;
       reader.readAsDataURL(blob);
     });
-  };
-
-  // You may want to get airlineName from state or props; for now, hardcode or add as needed
-  const airlineName = "Aeroméxico"; // TODO: Replace with dynamic value as needed
 
   const uploadBlobs = async (items: { blob: string; id: number }[], airlineName: string) => {
-    // Items are already in base64 format
     console.groupCollapsed("[uploadBlobs] Enviando imágenes");
     console.log("IDs:", items.map((i) => i.id));
-    console.log("Endpoint:", '/api/actions');
+    console.log("Endpoint:", "/api/actions");
+    console.log("Airline:", airlineName);
     console.groupEnd();
 
-    const res = await fetch('/api/actions', {
+    const res = await fetch("/api/actions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ items, airlineName }),
     });
     if (!res.ok) throw new Error(await res.text().catch(() => `HTTP ${res.status}`));
-    // New API output: { success, airline, actions }
-    const raw = (await res.json().catch(() => null)) as { success: boolean, airline: string, actions: BottlePrediction[] } | null;
+
+    const raw = (await res.json().catch(() => null)) as {
+      success: boolean;
+      airline: string;
+      actions: BottlePrediction[];
+    } | null;
+
     const actions = raw && Array.isArray(raw.actions) ? raw.actions : [];
     return { results: actions };
   };
@@ -270,28 +339,29 @@ export default function AlcoholLevelPage() {
 
     console.time("[uploadAll] Tiempo de subida]");
     try {
-        // First convert all blobs to base64
-    const itemsToUpload = await Promise.all(
-      pending.map(async (p) => ({ 
-        blob: await blobToBase64(p.blob), 
-        id: p.id, 
-        action: p.action 
-      }))
-    );
-    const { results } = await uploadBlobs(itemsToUpload, airlineName);
-
-    // Logs
-    console.group("[uploadAll] Respuesta del servidor");
-    console.log("Objeto completo (normalizado):", results);
-    if (Array.isArray(results)) {
-      console.table(
-        results.map((r) => ({
-          filename: r.filename,
-          prediction: r.prediction,
-          action: r.action,
+      // Convertir blobs a base64
+      const itemsToUpload = await Promise.all(
+        pending.map(async (p) => ({
+          blob: await blobToBase64(p.blob),
+          id: p.id,
+          action: p.action,
         }))
       );
-    }
+
+      // airlineName sale del input (solo nombres)
+      const airlineName = airlineQuery || "Unknown";
+      const { results } = await uploadBlobs(itemsToUpload, airlineName);
+
+      // Logs (solo acción)
+      console.group("[uploadAll] Respuesta del servidor");
+      if (Array.isArray(results)) {
+        console.table(
+          results.map((r) => ({
+            filename: r.filename,
+            action: r.action,
+          }))
+        );
+      }
       console.groupEnd();
 
       // Actualizar estado por filename
@@ -303,14 +373,14 @@ export default function AlcoholLevelPage() {
             return {
               ...p,
               status: "ok",
-              prediction: match.prediction,
-              action: match.action,
+              prediction: match.prediction as PredictionLabel,
+              action: match.action as ActionLabel,
             };
           }
           return p;
         })
       );
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       console.error("[uploadAll] Error al subir:", e);
       setPhotos((prev) =>
@@ -339,6 +409,69 @@ export default function AlcoholLevelPage() {
           </div>
         </div>
 
+        {/* ================== AUTOCOMPLETE DE AEROLÍNEAS (SOLO NOMBRES) ================== */}
+        <section className="mb-6 rounded-2xl bg-slate-800 p-6 ring-1 ring-black/5">
+          <h3 className="mb-3 text-xl font-semibold">Buscar aerolínea</h3>
+
+          <div className="relative">
+            <input
+              value={airlineQuery}
+              onChange={(e) => {
+                setAirlineQuery(e.target.value);
+                setOpenList(true);
+              }}
+              onFocus={() => setOpenList(true)}
+              onKeyDown={(e) => {
+                if (!openList) return;
+                if (e.key === "ArrowDown") {
+                  e.preventDefault();
+                  setHighlightIndex((i) => Math.min(i + 1, filteredAirlines.length - 1));
+                } else if (e.key === "ArrowUp") {
+                  e.preventDefault();
+                  setHighlightIndex((i) => Math.max(i - 1, 0));
+                } else if (e.key === "Enter") {
+                  e.preventDefault();
+                  const item = filteredAirlines[highlightIndex];
+                  if (item) onSelectAirline(item);
+                } else if (e.key === "Escape") {
+                  setOpenList(false);
+                }
+              }}
+              placeholder="Ej. Aeroméxico, Volaris, Delta…"
+              className="w-full rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-slate-100 placeholder-slate-400 outline-none focus:ring-2 focus:ring-sky-600"
+            />
+
+            {openList && filteredAirlines.length > 0 && (
+              <ul
+                className="absolute z-10 mt-2 max-h-72 w-full overflow-auto rounded-xl border border-slate-700 bg-slate-900/95 p-1 shadow-lg backdrop-blur"
+                role="listbox"
+              >
+                {filteredAirlines.map((name, idx) => {
+                  const active = idx === highlightIndex;
+                  return (
+                    <li
+                      key={name}
+                      role="option"
+                      aria-selected={active}
+                      onMouseEnter={() => setHighlightIndex(idx)}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        onSelectAirline(name);
+                      }}
+                      className={`cursor-pointer rounded-lg px-3 py-2 text-sm transition-colors ${
+                        active ? "bg-slate-700/60" : "hover:bg-slate-800/60"
+                      }`}
+                    >
+                      {highlightMatch(name, airlineQuery)}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+        </section>
+        {/* ================== FIN AUTOCOMPLETE ================== */}
+
         <div className="rounded-2xl bg-slate-800 p-6 ring-1 ring-black/5">
           {/* Controles: una sola fila + íconos */}
           <div className="flex flex-row flex-wrap items-stretch gap-3">
@@ -346,7 +479,7 @@ export default function AlcoholLevelPage() {
               onClick={() => startCamera("environment")}
               disabled={loading}
               className="flex-1 rounded-2xl bg-sky-700 px-6 py-4 text-lg font-semibold text-white hover:bg-sky-600 disabled:opacity-60"
-              aria-label={loading ? "Opening…" : active ? "Restart (rear)" : ""}
+              aria-label={loading ? "Opening…" : "Open"}
             >
               <span className="flex items-center justify-center gap-2">
                 <Play className="h-5 w-5" aria-hidden="true" />
@@ -379,36 +512,20 @@ export default function AlcoholLevelPage() {
             </button>
           </div>
 
-          {/* Live video */}
+          {/* Live video: respeta el aspecto real del stream */}
           <div className="mt-6 rounded-xl border border-slate-700 bg-black/40 p-3">
-            <video
-              ref={videoRef}
-              className="mx-auto aspect-video w-full max-w-3xl rounded-lg bg-black object-cover"
-              muted
-              playsInline
-            />
-          </div>
-
-          {/* Latest preview */}
-          {photoUrl && (
-            <div className="mt-6">
-              <p className="mb-2 text-sm text-slate-300">Latest capture:</p>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={photoUrl}
-                alt="capture"
-                className="mx-auto max-h-96 w-auto rounded-xl border border-slate-700 object-contain"
+            <div
+              className="mx-auto w-full max-w-3xl max-h-[75vh]"
+              style={ar ? { aspectRatio: ar } : undefined}
+            >
+              <video
+                ref={videoRef}
+                className="h-full w-full rounded-lg bg-black object-contain"
+                muted
+                playsInline
               />
-              <div className="mt-4 flex flex-col gap-3 sm:flex-row">
-                <button
-                  onClick={retake}
-                  className="flex-1 rounded-xl bg-slate-700 px-4 py-3 font-semibold text-white hover:bg-slate-600"
-                >
-                  Retake (clear preview)
-                </button>
-              </div>
             </div>
-          )}
+          </div>
 
           {error && (
             <div className="mt-4 rounded-xl bg-rose-900/40 p-3 text-rose-200 ring-1 ring-rose-900/60">
@@ -474,16 +591,16 @@ export default function AlcoholLevelPage() {
                     <div>{new Date(p.createdAt).toLocaleString()}</div>
 
                     {p.status === "ok" && (
-                      <div className="text-emerald-300">
-                        Uploaded ✓
-                        {(p.prediction || p.action) && (
-                          <>
-                            {" · "}
-                            <span className="font-semibold">prediction:</span> {labelPrediction(p.prediction)}
-                            {" · "}
-                            <span className="font-semibold">action:</span> {labelAction(p.action)}
-                          </>
-                        )}
+                      <div
+                        className={
+                          p.action === "keep"
+                            ? "text-emerald-300 font-semibold"
+                            : p.action === "discard"
+                            ? "text-rose-300 font-semibold"
+                            : "text-slate-300"
+                        }
+                      >
+                        {labelAction(p.action)}
                       </div>
                     )}
 
