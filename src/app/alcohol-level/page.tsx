@@ -31,8 +31,6 @@ type BottlePrediction = {
   action: ActionLabel;              // "keep" | "discard"
 };
 
-type ServerResponse = { results: BottlePrediction[] } | BottlePrediction[];
-
 // ======================== Componente ========================
 export default function AlcoholLevelPage() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -46,6 +44,7 @@ export default function AlcoholLevelPage() {
 
   // Latest preview (no "upload latest")
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [photoBlob, setPhotoBlob] = useState<Blob | null>(null);
 
   // Gallery list
@@ -140,6 +139,7 @@ export default function AlcoholLevelPage() {
         setPhotoUrl(null);
         setPhotoBlob(null);
       }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       const msg =
         e?.name === "NotAllowedError"
@@ -215,73 +215,43 @@ export default function AlcoholLevelPage() {
     setPhotos([]);
   };
 
-  // ===== Upload helpers =====
-  const API_BASE = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080").trim(); // e.g. http://localhost:3001
-  const ENDPOINT = `${API_BASE}/predict`; // <-- adjust to your real route
-
-  // const uploadBlob = async (blob: Blob, filename: string) => {
-  //   const form = new FormData();
-  //   form.append("images", blob, filename); // change "photo" if your API expects a different field
-  //   const res = await fetch(ENDPOINT, { method: "POST", body: form });
-  //   if (!res.ok) throw new Error(await res.text().catch(() => `HTTP ${res.status}`));
-  //   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  //   return res.json().catch(() => ({} as any));
-  // };
-
-  // const uploadOne = async (id: number) => {
-  //   setPhotos((prev) =>
-  //     prev.map((p) => (p.id === id ? { ...p, status: "uploading", error: null } : p))
-  //   );
-  //   const target = photos.find((p) => p.id === id);
-  //   if (!target) return;
-  //   try {
-  //     await uploadBlob(target.blob, `bottle-${id}.jpg`);
-  //     setPhotos((prev) => prev.map((p) => (p.id === id ? { ...p, status: "ok" } : p)));
-  //   } catch (e: any) {
-  //     setPhotos((prev) =>
-  //       prev.map((p) =>
-  //         p.id === id ? { ...p, status: "error", error: e?.message || "Upload failed" } : p
-  //       )
-  //     );
-  //   }
-  // };
-  
-  // const uploadAll = async () => {
-  //   const pending = photos.filter((p) => p.status === "idle" || p.status === "error");
-  //   for (const p of pending) {
-  //     await uploadOne(p.id);
-  //   }
-  // };
-
-  // Normaliza distintas formas de respuesta del backend hacia { results: BottlePrediction[] }
-  const parseServerJson = (data: ServerResponse): { results: BottlePrediction[] } => {
-    if (Array.isArray(data)) {
-      return { results: data };
-    }
-    if (Array.isArray((data as any)?.results)) {
-      return { results: (data as any).results };
-    }
-    // fallback vacío si viene algo inesperado
-    return { results: [] };
+  // Helper to convert Blob to base64
+  const blobToBase64 = (blob: Blob): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64 = reader.result;
+        if (typeof base64 === "string") {
+          resolve(base64.split(",")[1]); // remove data:*/*;base64,
+        } else {
+          reject(new Error("Failed to convert blob to base64"));
+        }
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
   };
 
-  const uploadBlobs = async (items: { blob: Blob; id: number }[]) => {
-    const form = new FormData();
-    items.forEach((item) => {
-      form.append("images", item.blob, `bottle-${item.id}.jpg`); // debe coincidir con Flask
-    });
+  // You may want to get airlineName from state or props; for now, hardcode or add as needed
+  const airlineName = "Aeroméxico"; // TODO: Replace with dynamic value as needed
 
+  const uploadBlobs = async (items: { blob: string; id: number }[], airlineName: string) => {
+    // Items are already in base64 format
     console.groupCollapsed("[uploadBlobs] Enviando imágenes");
     console.log("IDs:", items.map((i) => i.id));
-    console.log("Endpoint:", ENDPOINT);
+    console.log("Endpoint:", '/api/actions');
     console.groupEnd();
 
-    const res = await fetch(ENDPOINT, { method: "POST", body: form });
+    const res = await fetch('/api/actions', {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ items, airlineName }),
+    });
     if (!res.ok) throw new Error(await res.text().catch(() => `HTTP ${res.status}`));
-
-    const raw = (await res.json().catch(() => null)) as ServerResponse | null;
-    const normalized = raw ? parseServerJson(raw) : { results: [] };
-    return normalized; // { results: BottlePrediction[] }
+    // New API output: { success, airline, actions }
+    const raw = (await res.json().catch(() => null)) as { success: boolean, airline: string, actions: BottlePrediction[] } | null;
+    const actions = raw && Array.isArray(raw.actions) ? raw.actions : [];
+    return { results: actions };
   };
 
   const uploadAll = async () => {
@@ -300,20 +270,28 @@ export default function AlcoholLevelPage() {
 
     console.time("[uploadAll] Tiempo de subida]");
     try {
-      const { results } = await uploadBlobs(pending.map((p) => ({ blob: p.blob, id: p.id })));
+        // First convert all blobs to base64
+    const itemsToUpload = await Promise.all(
+      pending.map(async (p) => ({ 
+        blob: await blobToBase64(p.blob), 
+        id: p.id, 
+        action: p.action 
+      }))
+    );
+    const { results } = await uploadBlobs(itemsToUpload, airlineName);
 
-      // Logs
-      console.group("[uploadAll] Respuesta del servidor");
-      console.log("Objeto completo (normalizado):", results);
-      if (Array.isArray(results)) {
-        console.table(
-          results.map((r) => ({
-            filename: r.filename,
-            prediction: r.prediction,
-            action: r.action,
-          }))
-        );
-      }
+    // Logs
+    console.group("[uploadAll] Respuesta del servidor");
+    console.log("Objeto completo (normalizado):", results);
+    if (Array.isArray(results)) {
+      console.table(
+        results.map((r) => ({
+          filename: r.filename,
+          prediction: r.prediction,
+          action: r.action,
+        }))
+      );
+    }
       console.groupEnd();
 
       // Actualizar estado por filename
@@ -332,6 +310,7 @@ export default function AlcoholLevelPage() {
           return p;
         })
       );
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       console.error("[uploadAll] Error al subir:", e);
       setPhotos((prev) =>

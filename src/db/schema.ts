@@ -1,51 +1,35 @@
-import { pgTable, serial, text, varchar, integer, decimal, date, uuid, timestamp} from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
-
+import { pgTable, serial, text, varchar, integer, date } from "drizzle-orm/pg-core";
 
 export const airlines = pgTable("airlines", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
-  abreviation: varchar("abreviation", { length : 2}).notNull(),
-  rules_version: integer("rules_version"),
 });
 
-export const bottletypes = pgTable("bottletype", {
+export const flights = pgTable("flights", {
   id: serial("id").primaryKey(),
-  name: text("name").notNull(),
-  alcohol_content: decimal("alcohol_content", { precision: 5, scale: 2 }).notNull(),
+  airline_id: integer("airline_id").notNull().references(() => airlines.id),
+  flight_number: varchar("flight_number", { length: 10 }).notNull(),
 });
-
 
 export const bottle_rules = pgTable("bottle_rules", {
   id: serial("id").primaryKey(),
   airline_id: integer("airline_id").notNull().references(() => airlines.id),
-  bottle_type_id: integer("bottle_type_id").notNull().references(() => bottletypes.id),
-  action_if_empty: text("action_if_empty").notNull(),
-  action_if_partial: text("action_if_partial").notNull(),
-  action_if_full: text("action_if_full").notNull(),
-  action: text("action").notNull(),
+  empty: text("empty").notNull(),
+  partial: text("partial").notNull(),
+  full: text("full").notNull(),
+});
+
+export const stickers = pgTable("stickers", {
+  id: serial("id").primaryKey(),
+  shape: text("shape").notNull(),
+  color: text("color").notNull(),
+  caducity_date: date("caducity_date").notNull(),
 });
 
 export const products = pgTable("products", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
-  expiration_date: date().notNull(),
+  expiration_date: date("expiration_date").notNull(),
   type: text("type").notNull(),
-  sticker_shape: text("sticker_shape").notNull(),
-  sticker_color: text("sticker_color").notNull(),
-});
-
-export const cartlayout = pgTable("cartlayout", {
-  id: serial("id").primaryKey(),
-  airline_id: integer("airline_id").notNull().references(() => airlines.id),
-  position: text("position").notNull(),
-  expected_product_id: serial("expected_product_id").notNull().references(() => products.id)
-});
-
-export const users = pgTable("users", {
-  id: serial("id").primaryKey().notNull(),
-  name: text("name").notNull(),
-  email: text("email").notNull().unique(),
-  password_hash: text("password_hash").notNull(),
-  flightcode: varchar("flightcode", { length: 10}),
+  sticker_id: integer("sticker_id").notNull().references(() => stickers.id),
 });

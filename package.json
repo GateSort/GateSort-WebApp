@@ -9,7 +9,8 @@
     "lint": "eslint",
     "db:build": "npx drizzle-kit generate",
     "db:push": "npx drizzle-kit push",
-    "db:studio": "npx drizzle-kit studio"
+    "db:studio": "npx drizzle-kit studio",
+    "db:seed": "tsx src/db/seed.ts"
   },
   "dependencies": {
     "@elevenlabs/client": "^0.8.1",
