@@ -1,49 +1,14 @@
-import { db } from "../db/client";
+import { db } from "@/db/client";
+import { bottle_rules, airlines } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import { getAirlineByName } from "../elevenlabs/GateSort"; // ajusta la ruta según tu estructura
 
-export interface BottleAction {
-  filename: string;
-  prediction: "empty" | "medium" | "full";
-  action: string;
-  vuelo: string;
-  aerolinea: string;
-}
+export async function generateBottleAction(prediction: "empty" | "medium" | "full", airlineName: string) {
+  const airline = await db.select().from(airlines).where(eq(airlines.name, airlineName)).limit(1);
+  if (!airline.length) throw new Error("Aerolinea no encontrada");
 
-export async function generateBottleAction(
-  filename: string,
-  prediction: "empty" | "medium" | "full",
-  flightNumber: string,
-  airlineName: string
-): Promise<BottleAction> {
-  // Obtenemos la aerolínea por nombre
-  const airline = await getAirlineByName(airlineName);
+  const rules = await db.select().from(bottle_rules).where(eq(bottle_rules.airline_id, airline[0].id)).limit(1);
+  if (!rules.length) throw new Error("Reglas no encontradas");
 
-  // Obtenemos las reglas de la aerolínea
-  const rule = await db.query.bottle_rules.findFirst({
-    where: (r, { eq }) => eq(r.airline_id, airline.id),
-  });
-
-  if (!rule) throw new Error("Regla de botella no encontrada");
-
-  let action = "";
-  switch (prediction) {
-    case "empty":
-      action = rule.empty;
-      break;
-    case "medium":
-      action = rule.partial;
-      break;
-    case "full":
-      action = rule.full;
-      break;
-  }
-
-  return {
-    filename,
-    prediction,
-    action,
-    vuelo: flightNumber,
-    aerolinea: airline.name,
-  };
+  const rule = rules[0];
+  return rule[prediction === "medium" ? "partial" : prediction];
 }

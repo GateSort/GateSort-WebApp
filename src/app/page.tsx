@@ -14,7 +14,7 @@ export default function Page() {
           <h2 className="text-2xl font-semibold text-slate-100">Quick Actions</h2>
           <div className="mt-6 grid gap-6 md:grid-cols-2">
             <ActionButton href="/food-expiry" label="SCAN FOOD ITEMS" />
-            <ActionButton href="/alcohol-level" label="CHECK ALCOHOL LEVELS" variant="danger" />
+            <ActionButton href="/alcohol-level" label="SCAN ALCOHOL BOTTLES" variant="danger" />
             
           </div>
         </section>
