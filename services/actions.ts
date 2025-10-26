@@ -43,20 +43,14 @@ export async function getPredictionAction(items: { blob: string; id: number }[],
     const bottleRules = await db.select().from(bottle_rules)
         .leftJoin(airlines, eq(bottle_rules.airline_id, airlines.id))
         .where(eq(airlines.id, airline[0].id));
-
-    console.log(raw);
+    const rule = bottleRules[0].bottle_rules;
+    console.log(bottleRules);
 
     // Extract predictions from the raw response (new shape)
     const predictions: RawPrediction[] = raw && Array.isArray(raw.predictions) ? (raw.predictions as RawPrediction[]) : [];
 
     // Mapear las predicciones con las reglas de botella
-        const actions: BottlePrediction[] = predictions.map((prediction: RawPrediction, index: number) => {
-        const ruleRow = (bottleRules[index] as unknown) as { bottle_rules?: { full: string; partial: string; empty: string } } | undefined;
-        const rule = ruleRow?.bottle_rules ?? {
-            full: "discard",
-            partial: "discard",
-            empty: "discard",
-        };
+    const actions = predictions.map((prediction: RawPrediction) => {
         let action: ActionLabel = "discard";
         console.log(rule)
         if (prediction.predicted_class === "full") {
@@ -68,19 +62,19 @@ export async function getPredictionAction(items: { blob: string; id: number }[],
         }
 
         return {
-            file_name: prediction.file_name,
-            predicted_class: prediction.predicted_class as PredictionLabel,
+            filename: prediction.file_name,
+            prediction: prediction.predicted_class as PredictionLabel,
             action,
         };
-        });
-        
-        const result = {
-            success: true,
-            airline: airlineName,
-            actions,
-        }
-        console.log("result:", result);
-        return result;
+    });
+    
+    const result = {
+        success: true,
+        airline: airlineName,
+        actions,
+    }
+    console.log("result:", result);
+    return result;
   } catch (error) {
     return { success: false, error, message: "Error building predictions" };
   }
