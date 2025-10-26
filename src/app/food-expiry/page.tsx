@@ -461,7 +461,7 @@ export default function AlcoholLevelPage() {
                   setOpenList(false);
                 }
               }}
-              placeholder="Ej. Aeroméxico, Volaris, Delta…"
+              placeholder="Ej. Aeroméxico, Volaris…"
               className="w-full rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-slate-100 placeholder-slate-400 outline-none focus:ring-2 focus:ring-sky-600"
             />
 
