@@ -9,9 +9,6 @@ import { Play, Camera, Square } from "lucide-react"; // ← ICONOS
 type Facing = "environment" | "user";
 type UploadStatus = "idle" | "uploading" | "ok" | "error";
 
-type PredictionLabel = "full" | "medium" | "empty";
-type ActionLabel = "keep" | "discard";
-
 type PhotoItem = {
   id: number;
   url: string;       // Object URL for preview
@@ -19,16 +16,23 @@ type PhotoItem = {
   createdAt: number;
   status: UploadStatus;
   error?: string | null;
-  // Campos con resultados del servidor
-  prediction?: PredictionLabel;
-  action?: ActionLabel;
-};
-
-// === Tipos del backend (contrato) ===
-type BottlePrediction = {
-  filename: string;                 // p.ej. "bottle-3.jpg"
-  prediction: PredictionLabel;      // "full" | "medium" | "empty"
-  action: ActionLabel;              // "keep" | "discard"
+  // Analysis results
+  expired?: {
+    total: number;
+    details: Array<{
+      shape: string;
+      color: string;
+      count: number;
+    }>;
+  };
+  not_expired?: {
+    total: number;
+    details: Array<{
+      shape: string;
+      color: string;
+      count: number;
+    }>;
+  };
 };
 
 /* =========================================================
@@ -101,13 +105,7 @@ export default function AlcoholLevelPage() {
   const [photos, setPhotos] = useState<PhotoItem[]>([]);
 
   // ===== Helpers visuales =====
-  const bgClassesForAction = (action?: ActionLabel) => {
-    if (action === "keep") return "bg-emerald-900/30 ring-emerald-700/50";
-    if (action === "discard") return "bg-rose-900/30 ring-rose-700/50";
-    return "bg-slate-800/40 ring-slate-700/60"; // neutro si aún no hay resultado
-  };
-
-  const labelAction = (a?: ActionLabel) => (a ? (a === "keep" ? "keep" : "discard") : "—");
+  // UI helper functions are now inlined in the JSX
 
   /* ====== AUTOCOMPLETE AEROLÍNEAS (solo nombres) ====== */
   const [airlineQuery, setAirlineQuery] = useState("");
@@ -325,89 +323,90 @@ export default function AlcoholLevelPage() {
       reader.readAsDataURL(blob);
     });
 
-  const uploadBlobs = async (items: { blob: string; id: number }[], airlineName: string) => {
-    console.groupCollapsed("[uploadBlobs] Enviando imágenes");
-    console.log("IDs:", items.map((i) => i.id));
-    console.log("Endpoint:", "/api/actions");
-    console.log("Airline:", airlineName);
-    console.groupEnd();
+  const handleImageUpload = async (photo: PhotoItem) => {
+    try {
+      const base64String = await blobToBase64(photo.blob);
+      const analysis = await analyzeImage({ blob: base64String, id: photo.id });
+      
+      return {
+        ...photo,
+        status: "ok" as const,
+        expired: analysis.expired,
+        not_expired: analysis.not_expired
+      };
+    } catch (error) {
+      console.error("Error analyzing image:", error);
+      return {
+        ...photo,
+        status: "error" as const,
+        error: error instanceof Error ? error.message : "Failed to analyze image"
+      };
+    }
+  };
 
-    const res = await fetch("/api/actions", {
+  const analyzeImage = async (item: { blob: string; id: number }) => {
+    console.log("[analyzeImage] Sending image for sticker analysis");
+
+    const res = await fetch("/api/stickers", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ items, airlineName }),
+      body: JSON.stringify({ image: item }),
     });
+    
     if (!res.ok) throw new Error(await res.text().catch(() => `HTTP ${res.status}`));
 
-    const raw = (await res.json().catch(() => null)) as {
-      success: boolean;
-      airline: string;
-      actions: BottlePrediction[];
-    } | null;
-
-    const actions = raw && Array.isArray(raw.actions) ? raw.actions : [];
-    return { results: actions };
+    const analysis = await res.json();
+    if (!analysis.success) {
+      throw new Error(analysis.message || 'Analysis failed');
+    }
+    console.log("details: ", analysis)
+    return {
+      expired: analysis.expired,
+      not_expired: analysis.not_expired
+    };
   };
 
   const uploadAll = async () => {
     const pending = photos.filter((p) => p.status === "idle" || p.status === "error");
     if (pending.length === 0) {
-      console.info("[uploadAll] No hay fotos pendientes por subir.");
+      console.info("[uploadAll] No pending photos to analyze.");
       return;
     }
 
-    // marcar todas como "uploading"
+    // Mark all as "uploading"
     setPhotos((prev) =>
       prev.map((p) =>
         pending.find((x) => x.id === p.id) ? { ...p, status: "uploading", error: null } : p
       )
     );
 
-    console.time("[uploadAll] Tiempo de subida]");
+    console.time("[uploadAll] Upload time");
     try {
-      // Convertir blobs a base64
-      const itemsToUpload = await Promise.all(
-        pending.map(async (p) => ({
-          blob: await blobToBase64(p.blob),
-          id: p.id,
-          action: p.action,
-        }))
-      );
-
-      // airlineName sale del input (solo nombres)
-      const airlineName = airlineQuery || "Unknown";
-      const { results } = await uploadBlobs(itemsToUpload, airlineName);
-
-      // Logs (solo acción)
-      console.group("[uploadAll] Respuesta del servidor");
-      if (Array.isArray(results)) {
-        console.table(
-          results.map((r) => ({
-            filename: r.filename,
-            action: r.action,
-          }))
-        );
-      }
-      console.groupEnd();
-
-      // Actualizar estado por filename
+      // Process each image sequentially
+      const results = await Promise.all(pending.map(handleImageUpload));
+      
+      // Update photos with results
       setPhotos((prev) =>
         prev.map((p) => {
-          const filename = `bottle-${p.id}.jpg`;
-          const match = results.find((r) => r.filename === filename);
-          if (match) {
-            return {
-              ...p,
-              status: "ok",
-              prediction: match.prediction as PredictionLabel,
-              action: match.action as ActionLabel,
-            };
-          }
-          return p;
+          const result = results.find((r) => r.id === p.id);
+          return result || p;
         })
       );
+
+      console.group("[uploadAll] Analysis Results");
+      console.table(
+        results.map((r) => ({
+          id: r.id,
+          expired: r.expired?.total || 0,
+          not_expired: r.not_expired?.total || 0,
+          status: r.status,
+        }))
+      );
+      console.groupEnd();
+
+      // State is already updated by handleImageUpload
     } catch (e: unknown) {
-      const msg = e && typeof e === "object" && "message" in e ? String((e as any).message) : "Upload failed";
+      const msg = e && typeof e === "object" && "message" in e ? String(e.message) : "Upload failed";
       console.error("[uploadAll] Error al subir:", e);
       setPhotos((prev) =>
         prev.map((p) =>
@@ -429,7 +428,7 @@ export default function AlcoholLevelPage() {
             ←
           </Link>
           <div>
-            <h2 className="text-3xl font-semibold">Alcohol Level Detection</h2>
+            <h2 className="text-3xl font-semibold">Food Detection</h2>
           </div>
         </div>
 
@@ -598,11 +597,17 @@ export default function AlcoholLevelPage() {
                 <li key={p.id} className="rounded-xl border border-slate-700 p-3">
                   {/* Bloque de fondo que cambia según action */}
                   <div
-                    className={`relative rounded-lg ring-1 p-1 transition-colors ${bgClassesForAction(p.action)}`}
+                    className={`relative rounded-lg ring-1 p-1 transition-colors ${
+                      p.expired?.total ? 'bg-red-100 ring-red-500' :
+                      p.not_expired?.total ? 'bg-green-100 ring-green-500' :
+                      'bg-gray-100 ring-gray-300'
+                    }`}
                     aria-label={
-                      p.action
-                        ? (p.action === "keep" ? "Resultado: mantener" : "Resultado: descartar")
-                        : "Sin resultado"
+                      p.status === "ok"
+                        ? `Expired: ${p.expired?.total || 0}, Valid: ${p.not_expired?.total || 0}`
+                        : p.status === "error"
+                        ? "Error analyzing"
+                        : "Pending analysis"
                     }
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -619,14 +624,17 @@ export default function AlcoholLevelPage() {
                     {p.status === "ok" && (
                       <div
                         className={
-                          p.action === "keep"
-                            ? "text-emerald-300 font-semibold"
-                            : p.action === "discard"
+                          p.expired?.total
                             ? "text-rose-300 font-semibold"
-                            : "text-slate-300"
+                            : "text-emerald-300 font-semibold"
                         }
                       >
-                        {labelAction(p.action)}
+                        {p.expired?.total 
+                          ? `Expired Items: ${p.expired.total}`
+                          : p.not_expired?.total
+                          ? `Valid Items: ${p.not_expired.total}`
+                          : "No items detected"
+                        }
                       </div>
                     )}
 
