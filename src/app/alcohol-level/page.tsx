@@ -435,7 +435,6 @@ export default function AlcoholLevelPage() {
           </div>
         </div>
 
-        {/* ================== AUTOCOMPLETE DE AEROLÍNEAS (SOLO NOMBRES) ================== */}
         <section className="mb-6 rounded-2xl bg-slate-800 p-6 ring-1 ring-black/5">
           <h3 className="mb-3 text-xl font-semibold">Buscar aerolínea</h3>
 
@@ -496,7 +495,6 @@ export default function AlcoholLevelPage() {
             )}
           </div>
         </section>
-        {/* ================== FIN AUTOCOMPLETE ================== */}
 
         <div className="rounded-2xl bg-slate-800 p-6 ring-1 ring-black/5">
           {/* Controles: una sola fila + íconos */}
