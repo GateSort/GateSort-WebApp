@@ -102,7 +102,18 @@ export default function AlcoholLevelPage() {
 
   // ===== Helpers visuales =====
   const bgClassesForAction = (action?: ActionLabel) => {
-    if (action === "keep") return "text-lg bg-emerald-900/30 ring-emerald-700/50";
+    if (action === "keep") {
+      // Verde MUY notorio en dark mode
+      return [
+        "bg-emerald-600/80",                 // fondo fuerte
+        "ring-2 ring-emerald-300/90",        // borde brillante
+        "ring-offset-2 ring-offset-emerald-950", // separación del fondo
+        "backdrop-saturate-150",             // colores más vivos
+        "text-emerald-50",                   // buen contraste
+        "transition-all duration-300",
+        "shadow-lg"
+      ].join(" ");
+    }
     if (action === "discard") return "bg-rose-900/30 ring-rose-700/50";
     return "bg-slate-800/40 ring-slate-700/60"; // neutro si aún no hay resultado
   };
@@ -436,7 +447,7 @@ export default function AlcoholLevelPage() {
         </div>
 
         <section className="mb-6 rounded-2xl bg-slate-800 p-6 ring-1 ring-black/5">
-          <h3 className="mb-3 text-xl font-semibold">Buscar aerolínea</h3>
+          <h3 className="mb-3 text-xl font-semibold">Search airline</h3>
 
           <div className="relative">
             <input

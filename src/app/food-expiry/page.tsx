@@ -429,72 +429,9 @@ export default function AlcoholLevelPage() {
             ←
           </Link>
           <div>
-            <h2 className="text-3xl font-semibold">Alcohol Level Detection</h2>
+            <h2 className="text-3xl font-semibold">Food expiration date verifier</h2>
           </div>
         </div>
-
-        {/* ================== AUTOCOMPLETE DE AEROLÍNEAS (SOLO NOMBRES) ================== */}
-        <section className="mb-6 rounded-2xl bg-slate-800 p-6 ring-1 ring-black/5">
-          <h3 className="mb-3 text-xl font-semibold">Buscar aerolínea</h3>
-
-          <div className="relative">
-            <input
-              value={airlineQuery}
-              onChange={(e) => {
-                setAirlineQuery(e.target.value);
-                setOpenList(true);
-              }}
-              onFocus={() => setOpenList(true)}
-              onKeyDown={(e) => {
-                if (!openList) return;
-                if (e.key === "ArrowDown") {
-                  e.preventDefault();
-                  setHighlightIndex((i) => Math.min(i + 1, filteredAirlines.length - 1));
-                } else if (e.key === "ArrowUp") {
-                  e.preventDefault();
-                  setHighlightIndex((i) => Math.max(i - 1, 0));
-                } else if (e.key === "Enter") {
-                  e.preventDefault();
-                  const item = filteredAirlines[highlightIndex];
-                  if (item) onSelectAirline(item);
-                } else if (e.key === "Escape") {
-                  setOpenList(false);
-                }
-              }}
-              placeholder="Ej. Aeroméxico, Volaris…"
-              className="w-full rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-slate-100 placeholder-slate-400 outline-none focus:ring-2 focus:ring-sky-600"
-            />
-
-            {openList && filteredAirlines.length > 0 && (
-              <ul
-                className="absolute z-10 mt-2 max-h-72 w-full overflow-auto rounded-xl border border-slate-700 bg-slate-900/95 p-1 shadow-lg backdrop-blur"
-                role="listbox"
-              >
-                {filteredAirlines.map((name, idx) => {
-                  const active = idx === highlightIndex;
-                  return (
-                    <li
-                      key={name}
-                      role="option"
-                      aria-selected={active}
-                      onMouseEnter={() => setHighlightIndex(idx)}
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        onSelectAirline(name);
-                      }}
-                      className={`cursor-pointer rounded-lg px-3 py-2 text-sm transition-colors ${
-                        active ? "bg-slate-700/60" : "hover:bg-slate-800/60"
-                      }`}
-                    >
-                      {highlightMatch(name, airlineQuery)}
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </div>
-        </section>
-        {/* ================== FIN AUTOCOMPLETE ================== */}
 
         <div className="rounded-2xl bg-slate-800 p-6 ring-1 ring-black/5">
           {/* Controles: una sola fila + íconos */}
@@ -569,7 +506,7 @@ export default function AlcoholLevelPage() {
         <section className="mt-8 rounded-2xl bg-slate-900 p-6 ring-1 ring-black/5">
           <div className="mb-3 flex items-center justify-between">
             <h3 className="text-xl font-semibold">
-              Captured bottle photos
+              Captured items
               <span className="ml-2 rounded bg-slate-700 px-2 py-0.5 text-sm">{photos.length}</span>
             </h3>
             <div className="flex gap-2">
