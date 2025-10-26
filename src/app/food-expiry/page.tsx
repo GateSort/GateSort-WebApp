@@ -104,9 +104,6 @@ export default function AlcoholLevelPage() {
   // Galería
   const [photos, setPhotos] = useState<PhotoItem[]>([]);
 
-  // ===== Helpers visuales =====
-  // UI helper functions are now inlined in the JSX
-
   /* ====== AUTOCOMPLETE AEROLÍNEAS (solo nombres) ====== */
   const [airlineQuery, setAirlineQuery] = useState("");
   const [highlightIndex, setHighlightIndex] = useState(0);
@@ -382,7 +379,7 @@ export default function AlcoholLevelPage() {
 
     console.time("[uploadAll] Upload time");
     try {
-      // Process each image sequentially
+      // Process each image
       const results = await Promise.all(pending.map(handleImageUpload));
       
       // Update photos with results
@@ -404,9 +401,8 @@ export default function AlcoholLevelPage() {
       );
       console.groupEnd();
 
-      // State is already updated by handleImageUpload
     } catch (e: unknown) {
-      const msg = e && typeof e === "object" && "message" in e ? String(e.message) : "Upload failed";
+      const msg = e && typeof e === "object" && "message" in e ? String((e as any).message) : "Upload failed";
       console.error("[uploadAll] Error al subir:", e);
       setPhotos((prev) =>
         prev.map((p) =>
@@ -414,7 +410,7 @@ export default function AlcoholLevelPage() {
         )
       );
     } finally {
-      console.timeEnd("[uploadAll] Tiempo de subida]");
+      console.timeEnd("[uploadAll] Upload time");
     }
   };
 
@@ -428,72 +424,9 @@ export default function AlcoholLevelPage() {
             ←
           </Link>
           <div>
-            <h2 className="text-3xl font-semibold">Food Detection</h2>
+            <h2 className="text-3xl font-semibold">Food expiration date verifier</h2>
           </div>
         </div>
-
-        {/* ================== AUTOCOMPLETE DE AEROLÍNEAS (SOLO NOMBRES) ================== */}
-        <section className="mb-6 rounded-2xl bg-slate-800 p-6 ring-1 ring-black/5">
-          <h3 className="mb-3 text-xl font-semibold">Buscar aerolínea</h3>
-
-          <div className="relative">
-            <input
-              value={airlineQuery}
-              onChange={(e) => {
-                setAirlineQuery(e.target.value);
-                setOpenList(true);
-              }}
-              onFocus={() => setOpenList(true)}
-              onKeyDown={(e) => {
-                if (!openList) return;
-                if (e.key === "ArrowDown") {
-                  e.preventDefault();
-                  setHighlightIndex((i) => Math.min(i + 1, filteredAirlines.length - 1));
-                } else if (e.key === "ArrowUp") {
-                  e.preventDefault();
-                  setHighlightIndex((i) => Math.max(i - 1, 0));
-                } else if (e.key === "Enter") {
-                  e.preventDefault();
-                  const item = filteredAirlines[highlightIndex];
-                  if (item) onSelectAirline(item);
-                } else if (e.key === "Escape") {
-                  setOpenList(false);
-                }
-              }}
-              placeholder="Ej. Aeroméxico, Volaris…"
-              className="w-full rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-slate-100 placeholder-slate-400 outline-none focus:ring-2 focus:ring-sky-600"
-            />
-
-            {openList && filteredAirlines.length > 0 && (
-              <ul
-                className="absolute z-10 mt-2 max-h-72 w-full overflow-auto rounded-xl border border-slate-700 bg-slate-900/95 p-1 shadow-lg backdrop-blur"
-                role="listbox"
-              >
-                {filteredAirlines.map((name, idx) => {
-                  const active = idx === highlightIndex;
-                  return (
-                    <li
-                      key={name}
-                      role="option"
-                      aria-selected={active}
-                      onMouseEnter={() => setHighlightIndex(idx)}
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        onSelectAirline(name);
-                      }}
-                      className={`cursor-pointer rounded-lg px-3 py-2 text-sm transition-colors ${
-                        active ? "bg-slate-700/60" : "hover:bg-slate-800/60"
-                      }`}
-                    >
-                      {highlightMatch(name, airlineQuery)}
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </div>
-        </section>
-        {/* ================== FIN AUTOCOMPLETE ================== */}
 
         <div className="rounded-2xl bg-slate-800 p-6 ring-1 ring-black/5">
           {/* Controles: una sola fila + íconos */}
@@ -538,7 +471,7 @@ export default function AlcoholLevelPage() {
               className="mx-auto w-full max-w-3xl"
               style={
                 ar
-                  ? { aspectRatio: ar }
+                  ? { aspectRatio: ar as number }
                   : isPortraitWindow()
                   ? { aspectRatio: 9 / 16 }
                   : { aspectRatio: 16 / 9 }
@@ -568,7 +501,7 @@ export default function AlcoholLevelPage() {
         <section className="mt-8 rounded-2xl bg-slate-900 p-6 ring-1 ring-black/5">
           <div className="mb-3 flex items-center justify-between">
             <h3 className="text-xl font-semibold">
-              Captured bottle photos
+              Captured items
               <span className="ml-2 rounded bg-slate-700 px-2 py-0.5 text-sm">{photos.length}</span>
             </h3>
             <div className="flex gap-2">
@@ -595,7 +528,7 @@ export default function AlcoholLevelPage() {
             <ul className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
               {photos.map((p) => (
                 <li key={p.id} className="rounded-xl border border-slate-700 p-3">
-                  {/* Bloque de fondo que cambia según action */}
+                  {/* Bloque de fondo que cambia según análisis */}
                   <div
                     className={`relative rounded-lg ring-1 p-1 transition-colors ${
                       p.expired?.total ? 'bg-red-100 ring-red-500' :
@@ -616,6 +549,17 @@ export default function AlcoholLevelPage() {
                       alt={`capture-${p.id}`}
                       className="h-48 w-full rounded-md object-cover"
                     />
+
+                    {/* Badge flotante opcional */}
+                    {p.status === "ok" && (
+                      <div className="absolute left-2 top-2 rounded-md bg-black/60 px-2 py-1 text-xs font-semibold text-white backdrop-blur">
+                        {p.expired?.total
+                          ? `Expired: ${p.expired.total}`
+                          : p.not_expired?.total
+                          ? `Valid: ${p.not_expired.total}`
+                          : "No items"}
+                      </div>
+                    )}
                   </div>
 
                   <div className="mt-2 text-xs text-slate-300">
@@ -641,6 +585,89 @@ export default function AlcoholLevelPage() {
                     {p.status === "uploading" && <div className="text-indigo-300">Uploading…</div>}
                     {p.status === "error" && <div className="text-rose-300">Upload failed</div>}
                   </div>
+
+                  {/* === Analysis blocks under the image === */}
+                  {p.status === "ok" && (
+                    <div className="mt-3 space-y-4">
+                      {/* Expired section */}
+                      {typeof p.expired?.total === "number" && (
+                        <div className="rounded-xl border border-rose-700/40 bg-rose-900/20 p-3">
+                          <div className="mb-2 flex items-center justify-between">
+                            <h4 className="text-sm font-semibold text-rose-200">
+                              Expired
+                            </h4>
+                            <span className="rounded-md bg-rose-800/60 px-2 py-0.5 text-xs font-semibold text-rose-100">
+                              Total: {p.expired.total}
+                            </span>
+                          </div>
+
+                          {Array.isArray(p.expired.details) && p.expired.details.length > 0 && (
+                            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                              {p.expired.details.map((d, idx) => (
+                                <div
+                                  key={`exp-${p.id}-${idx}`}
+                                  className="rounded-lg border border-rose-800/40 bg-rose-900/30 px-3 py-2"
+                                >
+                                  <div className="flex items-center justify-between text-xs">
+                                    <div className="space-x-2">
+                                      <span className="rounded bg-rose-800/70 px-1.5 py-0.5 font-medium text-rose-100">
+                                        {d.shape || "—"}
+                                      </span>
+                                      <span className="rounded bg-rose-800/40 px-1.5 py-0.5 text-rose-200/90">
+                                        {d.color || "—"}
+                                      </span>
+                                    </div>
+                                    <span className="rounded bg-rose-700/60 px-2 py-0.5 font-semibold text-rose-50">
+                                      {d.count ?? 0}
+                                    </span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Not expired section */}
+                      {typeof p.not_expired?.total === "number" && (
+                        <div className="rounded-xl border border-emerald-700/40 bg-emerald-900/20 p-3">
+                          <div className="mb-2 flex items-center justify-between">
+                            <h4 className="text-sm font-semibold text-emerald-200">
+                              Valid / Not expired
+                            </h4>
+                            <span className="rounded-md bg-emerald-800/60 px-2 py-0.5 text-xs font-semibold text-emerald-100">
+                              Total: {p.not_expired.total}
+                            </span>
+                          </div>
+
+                          {Array.isArray(p.not_expired.details) && p.not_expired.details.length > 0 && (
+                            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                              {p.not_expired.details.map((d, idx) => (
+                                <div
+                                  key={`ok-${p.id}-${idx}`}
+                                  className="rounded-lg border border-emerald-800/40 bg-emerald-900/30 px-3 py-2"
+                                >
+                                  <div className="flex items-center justify-between text-xs">
+                                    <div className="space-x-2">
+                                      <span className="rounded bg-emerald-800/70 px-1.5 py-0.5 font-medium text-emerald-100">
+                                        {d.shape || "—"}
+                                      </span>
+                                      <span className="rounded bg-emerald-800/40 px-1.5 py-0.5 text-emerald-200/90">
+                                        {d.color || "—"}
+                                      </span>
+                                    </div>
+                                    <span className="rounded bg-emerald-700/60 px-2 py-0.5 font-semibold text-emerald-50">
+                                      {d.count ?? 0}
+                                    </span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   <div className="mt-2 flex gap-2">
                     <button
