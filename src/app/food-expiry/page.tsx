@@ -4,45 +4,41 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import Header from "../../components/Header";
 import BottomNav from "../../components/BottomNav";
-import { Play, Camera, Square } from "lucide-react";
+import { Play, Camera, Square } from "lucide-react"; // ← ICONOS
 
-/* ====== Tipos ====== */
 type Facing = "environment" | "user";
 type UploadStatus = "idle" | "uploading" | "ok" | "error";
 
-/** Niveles de caducidad del alimento */
-type ExpiryLevel = "fresh" | "soon" | "expired";
-/** Acción sugerida según el modelo */
-type FoodAction = "keep" | "discard";
+type PredictionLabel = "full" | "medium" | "empty";
+type ActionLabel = "keep" | "discard";
 
-/** Foto capturada de un alimento */
-type FoodPhoto = {
+type PhotoItem = {
   id: number;
-  url: string;        // Object URL para preview
-  blob: Blob;         // Datos de la imagen
+  url: string;       // Object URL for preview
+  blob: Blob;        // Image data
   createdAt: number;
   status: UploadStatus;
   error?: string | null;
-  // Resultados del servidor
-  prediction?: ExpiryLevel;
-  action?: FoodAction;
+  // Campos con resultados del servidor
+  prediction?: PredictionLabel;
+  action?: ActionLabel;
 };
 
-/** Respuesta del backend por archivo */
-type FoodExpiryResult = {
-  filename: string;      // ej. "food-3.jpg"
-  prediction: ExpiryLevel;
-  action: FoodAction;
+// === Tipos del backend (contrato) ===
+type BottlePrediction = {
+  filename: string;                 // p.ej. "bottle-3.jpg"
+  prediction: PredictionLabel;      // "full" | "medium" | "empty"
+  action: ActionLabel;              // "keep" | "discard"
 };
 
 /* =========================================================
-   PRODUCTOS (solo nombres) + helpers de búsqueda
+   AEROLÍNEAS (SOLO NOMBRES) + helpers de búsqueda
    ========================================================= */
-const PRODUCTS: string[] = [
-  "Leche entera",
-  "Yogur natural",
-  "Queso manchego",
-  "Jamón",
+const AIRLINES: string[] = [
+  "Aeroméxico",
+  "Volaris",
+  "Viva Aerobus",
+  "American Airlines",
 ];
 
 const normalize = (s: string) =>
@@ -86,9 +82,9 @@ function highlightMatch(text: string, query: string) {
   );
 }
 
-/* ======================== Componente ======================== */
+// ======================== Componente ========================
 
-export default function FoodExpiryPage() {
+export default function AlcoholLevelPage() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const idCounterRef = useRef(1);
@@ -102,34 +98,34 @@ export default function FoodExpiryPage() {
   const [ar, setAr] = useState<number | null>(null);
 
   // Galería
-  const [photos, setPhotos] = useState<FoodPhoto[]>([]);
+  const [photos, setPhotos] = useState<PhotoItem[]>([]);
 
   // ===== Helpers visuales =====
-  const bgClassesForAction = (action?: FoodAction) => {
+  const bgClassesForAction = (action?: ActionLabel) => {
     if (action === "keep") return "bg-emerald-900/30 ring-emerald-700/50";
     if (action === "discard") return "bg-rose-900/30 ring-rose-700/50";
     return "bg-slate-800/40 ring-slate-700/60"; // neutro si aún no hay resultado
   };
 
-  const labelAction = (a?: FoodAction) => (a ? (a === "keep" ? "keep" : "discard") : "—");
+  const labelAction = (a?: ActionLabel) => (a ? (a === "keep" ? "keep" : "discard") : "—");
 
-  /* ====== Autocomplete de productos ====== */
-  const [productQuery, setProductQuery] = useState("");
+  /* ====== AUTOCOMPLETE AEROLÍNEAS (solo nombres) ====== */
+  const [airlineQuery, setAirlineQuery] = useState("");
   const [highlightIndex, setHighlightIndex] = useState(0);
   const [openList, setOpenList] = useState(false);
 
-  const filteredProducts = useMemo(() => {
-    const q = normalize(productQuery);
-    const base = q ? PRODUCTS.filter((name) => normalize(name).includes(q)) : PRODUCTS;
+  const filteredAirlines = useMemo(() => {
+    const q = normalize(airlineQuery);
+    const base = q ? AIRLINES.filter((name) => normalize(name).includes(q)) : AIRLINES;
     return base.slice(0, 8);
-  }, [productQuery]);
+  }, [airlineQuery]);
 
   useEffect(() => {
     setHighlightIndex(0);
-  }, [productQuery]);
+  }, [airlineQuery]);
 
-  const onSelectProduct = (name: string) => {
-    setProductQuery(name); // solo nombre en el input
+  const onSelectAirline = (name: string) => {
+    setAirlineQuery(name); // solo nombre en el input
     setOpenList(false);
   };
 
@@ -264,7 +260,7 @@ export default function FoodExpiryPage() {
     }
   };
 
-  // ===== Captura & lista =====
+  // ===== Capture & list handling =====
   const capturePhoto = async () => {
     if (!videoRef.current) return;
     const video = videoRef.current;
@@ -285,7 +281,7 @@ export default function FoodExpiryPage() {
         if (!blob) return;
 
         const url = URL.createObjectURL(blob);
-        const item: FoodPhoto = {
+        const item: PhotoItem = {
           id: idCounterRef.current++,
           url,
           blob,
@@ -313,7 +309,7 @@ export default function FoodExpiryPage() {
     setPhotos([]);
   };
 
-  // Helper para convertir Blob → base64 (para subir)
+  // Helper to convert Blob to base64
   const blobToBase64 = (blob: Blob): Promise<string> =>
     new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -329,24 +325,24 @@ export default function FoodExpiryPage() {
       reader.readAsDataURL(blob);
     });
 
-  const uploadBlobs = async (items: { blob: string; id: number }[], itemName: string) => {
+  const uploadBlobs = async (items: { blob: string; id: number }[], airlineName: string) => {
     console.groupCollapsed("[uploadBlobs] Enviando imágenes");
     console.log("IDs:", items.map((i) => i.id));
     console.log("Endpoint:", "/api/actions");
-    console.log("Item:", itemName);
+    console.log("Airline:", airlineName);
     console.groupEnd();
 
     const res = await fetch("/api/actions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ items, itemName }),
+      body: JSON.stringify({ items, airlineName }),
     });
     if (!res.ok) throw new Error(await res.text().catch(() => `HTTP ${res.status}`));
 
     const raw = (await res.json().catch(() => null)) as {
       success: boolean;
-      item: string;
-      actions: FoodExpiryResult[];
+      airline: string;
+      actions: BottlePrediction[];
     } | null;
 
     const actions = raw && Array.isArray(raw.actions) ? raw.actions : [];
@@ -369,6 +365,7 @@ export default function FoodExpiryPage() {
 
     console.time("[uploadAll] Tiempo de subida]");
     try {
+      // Convertir blobs a base64
       const itemsToUpload = await Promise.all(
         pending.map(async (p) => ({
           blob: await blobToBase64(p.blob),
@@ -377,8 +374,9 @@ export default function FoodExpiryPage() {
         }))
       );
 
-      const itemName = productQuery || "Unknown";
-      const { results } = await uploadBlobs(itemsToUpload, itemName);
+      // airlineName sale del input (solo nombres)
+      const airlineName = airlineQuery || "Unknown";
+      const { results } = await uploadBlobs(itemsToUpload, airlineName);
 
       // Logs (solo acción)
       console.group("[uploadAll] Respuesta del servidor");
@@ -395,14 +393,14 @@ export default function FoodExpiryPage() {
       // Actualizar estado por filename
       setPhotos((prev) =>
         prev.map((p) => {
-          const filename = `food-${p.id}.jpg`; // ajusta si tu backend usa otro prefijo
+          const filename = `bottle-${p.id}.jpg`;
           const match = results.find((r) => r.filename === filename);
           if (match) {
             return {
               ...p,
               status: "ok",
-              prediction: match.prediction as ExpiryLevel,
-              action: match.action as FoodAction,
+              prediction: match.prediction as PredictionLabel,
+              action: match.action as ActionLabel,
             };
           }
           return p;
@@ -431,19 +429,19 @@ export default function FoodExpiryPage() {
             ←
           </Link>
           <div>
-            <h2 className="text-3xl font-semibold">Food Expiry Detection</h2>
+            <h2 className="text-3xl font-semibold">Alcohol Level Detection</h2>
           </div>
         </div>
 
-        {/* ================== AUTOCOMPLETE DE PRODUCTOS ================== */}
+        {/* ================== AUTOCOMPLETE DE AEROLÍNEAS (SOLO NOMBRES) ================== */}
         <section className="mb-6 rounded-2xl bg-slate-800 p-6 ring-1 ring-black/5">
-          <h3 className="mb-3 text-xl font-semibold">Buscar producto</h3>
+          <h3 className="mb-3 text-xl font-semibold">Buscar aerolínea</h3>
 
           <div className="relative">
             <input
-              value={productQuery}
+              value={airlineQuery}
               onChange={(e) => {
-                setProductQuery(e.target.value);
+                setAirlineQuery(e.target.value);
                 setOpenList(true);
               }}
               onFocus={() => setOpenList(true)}
@@ -451,28 +449,28 @@ export default function FoodExpiryPage() {
                 if (!openList) return;
                 if (e.key === "ArrowDown") {
                   e.preventDefault();
-                  setHighlightIndex((i) => Math.min(i + 1, filteredProducts.length - 1));
+                  setHighlightIndex((i) => Math.min(i + 1, filteredAirlines.length - 1));
                 } else if (e.key === "ArrowUp") {
                   e.preventDefault();
                   setHighlightIndex((i) => Math.max(i - 1, 0));
                 } else if (e.key === "Enter") {
                   e.preventDefault();
-                  const item = filteredProducts[highlightIndex];
-                  if (item) onSelectProduct(item);
+                  const item = filteredAirlines[highlightIndex];
+                  if (item) onSelectAirline(item);
                 } else if (e.key === "Escape") {
                   setOpenList(false);
                 }
               }}
-              placeholder="Ej. Leche, Yogur, Queso…"
+              placeholder="Ej. Aeroméxico, Volaris, Delta…"
               className="w-full rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-slate-100 placeholder-slate-400 outline-none focus:ring-2 focus:ring-sky-600"
             />
 
-            {openList && filteredProducts.length > 0 && (
+            {openList && filteredAirlines.length > 0 && (
               <ul
                 className="absolute z-10 mt-2 max-h-72 w-full overflow-auto rounded-xl border border-slate-700 bg-slate-900/95 p-1 shadow-lg backdrop-blur"
                 role="listbox"
               >
-                {filteredProducts.map((name, idx) => {
+                {filteredAirlines.map((name, idx) => {
                   const active = idx === highlightIndex;
                   return (
                     <li
@@ -482,13 +480,13 @@ export default function FoodExpiryPage() {
                       onMouseEnter={() => setHighlightIndex(idx)}
                       onMouseDown={(e) => {
                         e.preventDefault();
-                        onSelectProduct(name);
+                        onSelectAirline(name);
                       }}
                       className={`cursor-pointer rounded-lg px-3 py-2 text-sm transition-colors ${
                         active ? "bg-slate-700/60" : "hover:bg-slate-800/60"
                       }`}
                     >
-                      {highlightMatch(name, productQuery)}
+                      {highlightMatch(name, airlineQuery)}
                     </li>
                   );
                 })}
@@ -499,7 +497,7 @@ export default function FoodExpiryPage() {
         {/* ================== FIN AUTOCOMPLETE ================== */}
 
         <div className="rounded-2xl bg-slate-800 p-6 ring-1 ring-black/5">
-          {/* Controles */}
+          {/* Controles: una sola fila + íconos */}
           <div className="flex flex-row flex-wrap items-stretch gap-3">
             <button
               onClick={() => startCamera("environment")}
@@ -567,11 +565,11 @@ export default function FoodExpiryPage() {
           </p>
         </div>
 
-        {/* Galería + subida */}
+        {/* Gallery with per-item upload */}
         <section className="mt-8 rounded-2xl bg-slate-900 p-6 ring-1 ring-black/5">
           <div className="mb-3 flex items-center justify-between">
             <h3 className="text-xl font-semibold">
-              Captured food photos
+              Captured bottle photos
               <span className="ml-2 rounded bg-slate-700 px-2 py-0.5 text-sm">{photos.length}</span>
             </h3>
             <div className="flex gap-2">
@@ -598,7 +596,7 @@ export default function FoodExpiryPage() {
             <ul className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
               {photos.map((p) => (
                 <li key={p.id} className="rounded-xl border border-slate-700 p-3">
-                  {/* Fondo cambia según acción */}
+                  {/* Bloque de fondo que cambia según action */}
                   <div
                     className={`relative rounded-lg ring-1 p-1 transition-colors ${bgClassesForAction(p.action)}`}
                     aria-label={
@@ -610,7 +608,7 @@ export default function FoodExpiryPage() {
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={p.url}
-                      alt={`food-capture-${p.id}`}
+                      alt={`capture-${p.id}`}
                       className="h-48 w-full rounded-md object-cover"
                     />
                   </div>
