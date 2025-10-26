@@ -27,10 +27,9 @@ export default function FoodExpiryPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [photos, setPhotos] = useState<PhotoItem[]>([]);
 
-  // === Aspect ratio real del stream (ancho/alto)
+  // Aspect ratio real (ancho/alto) del stream
   const [ar, setAr] = useState<number | null>(null);
 
   // ===== Helpers de orientación/constraints =====
@@ -66,7 +65,7 @@ export default function FoodExpiryPage() {
   useEffect(() => {
     return () => {
       stopCamera();
-      if (photoUrl) URL.revokeObjectURL(photoUrl);
+      // Revocar todos los object URLs generados
       photos.forEach((p) => URL.revokeObjectURL(p.url));
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -79,7 +78,7 @@ export default function FoodExpiryPage() {
       if (v?.videoWidth && v?.videoHeight) {
         setAr(v.videoWidth / v.videoHeight);
       } else {
-        setAr(null); // usará fallback 9/16 o 16/9
+        setAr(null); // fallback 9/16 o 16/9
       }
     };
     window.addEventListener("orientationchange", onResize);
@@ -97,7 +96,6 @@ export default function FoodExpiryPage() {
       stopCamera();
 
       const mode: Facing = "environment";
-      // 1º intento: solo facing exacto
       const strict: MediaStreamConstraints = {
         video: { facingMode: { exact: mode } },
         audio: false,
@@ -108,7 +106,6 @@ export default function FoodExpiryPage() {
       try {
         stream = await navigator.mediaDevices.getUserMedia(strict);
       } catch {
-        // 2º intento: dimensiones según orientación
         stream = await navigator.mediaDevices.getUserMedia(ideal);
       }
 
@@ -136,13 +133,7 @@ export default function FoodExpiryPage() {
         }
       }
       setActive(true);
-
-      if (photoUrl) {
-        URL.revokeObjectURL(photoUrl);
-        setPhotoUrl(null);
-      }
     } catch (err: unknown) {
-      // Narrow seguro sin usar 'any'
       let userMsg = "Failed to start the camera.";
       if (typeof err === "object" && err !== null && "name" in err) {
         const name = String((err as { name?: string }).name);
@@ -182,9 +173,7 @@ export default function FoodExpiryPage() {
       (blob) => {
         if (!blob) return;
 
-        if (photoUrl) URL.revokeObjectURL(photoUrl);
         const url = URL.createObjectURL(blob);
-
         const item: PhotoItem = {
           id: idCounterRef.current++,
           url,
@@ -194,7 +183,6 @@ export default function FoodExpiryPage() {
           error: null,
         };
         setPhotos((prev) => [item, ...prev]);
-        setPhotoUrl(url);
       },
       "image/jpeg",
       0.9
