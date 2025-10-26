@@ -102,7 +102,7 @@ export default function AlcoholLevelPage() {
 
   // ===== Helpers visuales =====
   const bgClassesForAction = (action?: ActionLabel) => {
-    if (action === "keep") return "bg-emerald-900/30 ring-emerald-700/50";
+    if (action === "keep") return "text-lg bg-emerald-900/30 ring-emerald-700/50";
     if (action === "discard") return "bg-rose-900/30 ring-rose-700/50";
     return "bg-slate-800/40 ring-slate-700/60"; // neutro si aún no hay resultado
   };
