@@ -6,7 +6,6 @@ import Header from "../../components/Header";
 import BottomNav from "../../components/BottomNav";
 import { Play, Camera, Square } from "lucide-react";
 
-type Facing = "environment" | "user";
 type UploadStatus = "idle" | "uploading" | "ok" | "error";
 
 type PhotoItem = {
@@ -28,6 +27,7 @@ export default function FoodExpiryPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [photoBlob, setPhotoBlob] = useState<Blob | null>(null);
 
   const [photos, setPhotos] = useState<PhotoItem[]>([]);
