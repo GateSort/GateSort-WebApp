@@ -217,8 +217,42 @@ export default function AlcoholLevelPage() {
   };
 
   // ===== Upload helpers =====
-  const API_BASE = (process.env.NEXT_PUBLIC_API_URL ?? "").trim(); // e.g. http://localhost:3001
-  const ENDPOINT = `${API_BASE}/predict`; // <-- ajusta a tu ruta real
+  const API_BASE = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080").trim(); // e.g. http://localhost:3001
+  const ENDPOINT = `${API_BASE}/predict`; // <-- adjust to your real route
+
+  // const uploadBlob = async (blob: Blob, filename: string) => {
+  //   const form = new FormData();
+  //   form.append("images", blob, filename); // change "photo" if your API expects a different field
+  //   const res = await fetch(ENDPOINT, { method: "POST", body: form });
+  //   if (!res.ok) throw new Error(await res.text().catch(() => `HTTP ${res.status}`));
+  //   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  //   return res.json().catch(() => ({} as any));
+  // };
+
+  // const uploadOne = async (id: number) => {
+  //   setPhotos((prev) =>
+  //     prev.map((p) => (p.id === id ? { ...p, status: "uploading", error: null } : p))
+  //   );
+  //   const target = photos.find((p) => p.id === id);
+  //   if (!target) return;
+  //   try {
+  //     await uploadBlob(target.blob, `bottle-${id}.jpg`);
+  //     setPhotos((prev) => prev.map((p) => (p.id === id ? { ...p, status: "ok" } : p)));
+  //   } catch (e: any) {
+  //     setPhotos((prev) =>
+  //       prev.map((p) =>
+  //         p.id === id ? { ...p, status: "error", error: e?.message || "Upload failed" } : p
+  //       )
+  //     );
+  //   }
+  // };
+  
+  // const uploadAll = async () => {
+  //   const pending = photos.filter((p) => p.status === "idle" || p.status === "error");
+  //   for (const p of pending) {
+  //     await uploadOne(p.id);
+  //   }
+  // };
 
   // Normaliza distintas formas de respuesta del backend hacia { results: BottlePrediction[] }
   const parseServerJson = (data: ServerResponse): { results: BottlePrediction[] } => {
