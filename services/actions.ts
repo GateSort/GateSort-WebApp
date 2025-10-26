@@ -5,6 +5,11 @@ import { eq } from "drizzle-orm";
 // Normaliza distintas formas de respuesta del backend hacia { results: BottlePrediction[] }
 type PredictionLabel = "full" | "medium" | "empty";
 type ActionLabel = "keep" | "discard";
+type BottlePrediction = {
+  file_name: string;                 // p.ej. "bottle-3.jpg"
+  predicted_class: PredictionLabel;      // "full" | "medium" | "empty"
+  action: ActionLabel;              // "keep" | "discard"
+};
 
 type RawPrediction = {
   confidence: number;
