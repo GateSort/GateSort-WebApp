@@ -84,6 +84,8 @@ export default function AlcoholLevelPage() {
   }, [airlineQuery]);
   useEffect(() => setHighlightIndex(0), [airlineQuery]);
   const onSelectAirline = (name: string) => { setAirlineQuery(name); setOpenList(false); };
+  const [scriptLoaded, setScriptLoaded] = useState(false);
+
   useEffect(() => {
     const script = document.createElement("script");
     script.src = "https://unpkg.com/@elevenlabs/convai-widget-embed";
@@ -249,6 +251,32 @@ export default function AlcoholLevelPage() {
         id: r.id, expired: r.expired?.total || 0, not_expired: r.not_expired?.total || 0, status: r.status,
       })));
       console.groupEnd();
+      // === Mensajes TTS ===
+      for (const r of results) {
+        if (r.status != "ok") continue;
+
+        // Mensajes por stickers expirados
+        if (r.expired?.details) {
+          for (const s of r.expired.details) {
+            const msg = `The food with a ${s.color} ${s.shape} sticker has expired. You should discard ${s.count} item${s.count > 1 ? 's' : ''}.`;
+            await speakWithElevenLabs(msg);
+          }
+        }
+
+        // Mensajes por stickers no expirados
+        if (r.not_expired?.details) {
+          for (const s of r.not_expired.details) {
+            const msg = `The food with a ${s.color} ${s.shape} sticker is still fresh. You can keep ${s.count} item${s.count > 1 ? 's' : ''}.`;
+            await speakWithElevenLabs(msg);
+          }
+        }
+
+        // Mensaje resumen general por imagen
+        const totalExpired = r.expired?.total || 0;
+        const totalNotExpired = r.not_expired?.total || 0;
+        const summaryMsg = `Summary: ${totalExpired} item${totalExpired !== 1 ? 's' : ''} have expired and should be discarded, while ${totalNotExpired} item${totalNotExpired !== 1 ? 's' : ''} are still good.`;
+        await speakWithElevenLabs(summaryMsg);
+      }
     } catch (e: any) {
       const msg = e?.message || "Upload failed";
       setPhotos((prev) => prev.map((p) => (pending.find((x) => x.id === p.id) ? { ...p, status: "error", error: msg } : p)));
