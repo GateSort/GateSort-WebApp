@@ -129,7 +129,27 @@ export default function AlcoholLevelPage() {
     setOpenList(false);
   };
 
-  // ===== Camera control =====
+  // ===== Camera helpers =====
+  function isPortraitWindow() {
+    if (typeof window === "undefined") return false;
+    return window.matchMedia?.("(orientation: portrait)")?.matches || window.innerHeight > window.innerWidth;
+  }
+
+  function buildConstraints(mode: Facing): MediaStreamConstraints {
+    const portrait = isPortraitWindow();
+    const size = portrait
+      ? { width: { ideal: 720 }, height: { ideal: 1280 } } // alto > ancho
+      : { width: { ideal: 1280 }, height: { ideal: 720 } };
+
+    return {
+      video: {
+        facingMode: mode,
+        ...size,
+      },
+      audio: false,
+    };
+  }
+
   const stopCamera = () => {
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
@@ -141,10 +161,27 @@ export default function AlcoholLevelPage() {
   useEffect(() => {
     return () => {
       stopCamera();
-      // revocar URLs de la galería
       photos.forEach((p) => URL.revokeObjectURL(p.url));
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Recalcular AR al rotar o redimensionar
+  useEffect(() => {
+    const onResize = () => {
+      const v = videoRef.current;
+      if (v?.videoWidth && v?.videoHeight) {
+        setAr(v.videoWidth / v.videoHeight);
+      } else {
+        setAr(null); // forzar fallback 9/16 o 16/9
+      }
+    };
+    window.addEventListener("orientationchange", onResize);
+    window.addEventListener("resize", onResize);
+    return () => {
+      window.removeEventListener("orientationchange", onResize);
+      window.removeEventListener("resize", onResize);
+    };
   }, []);
 
   const startCamera = async (mode: Facing = facingMode) => {
@@ -153,14 +190,8 @@ export default function AlcoholLevelPage() {
       setError(null);
       stopCamera();
 
-      const strict: MediaStreamConstraints = {
-        video: { facingMode: { exact: mode }, width: { ideal: 1280 }, height: { ideal: 720 } },
-        audio: false,
-      };
-      const ideal: MediaStreamConstraints = {
-        video: { facingMode: mode, width: { ideal: 1280 }, height: { ideal: 720 } },
-        audio: false,
-      };
+      const strict: MediaStreamConstraints = { video: { facingMode: { exact: mode } }, audio: false };
+      const ideal = buildConstraints(mode);
 
       let stream: MediaStream | null = null;
       try {
@@ -169,7 +200,7 @@ export default function AlcoholLevelPage() {
         stream = await navigator.mediaDevices.getUserMedia(ideal);
       }
 
-      // Intento de forzar cámara trasera en móviles si pidió "environment" y no se logró
+      // Intento de forzar cámara trasera si pidió "environment" y no se logró
       if (mode === "environment" && stream) {
         const track = stream.getVideoTracks()[0];
         const settings = track.getSettings();
@@ -182,7 +213,7 @@ export default function AlcoholLevelPage() {
             if (rear) {
               stream.getTracks().forEach((t) => t.stop());
               stream = await navigator.mediaDevices.getUserMedia({
-                video: { deviceId: { exact: rear.deviceId }, width: { ideal: 1280 }, height: { ideal: 720 } },
+                video: { deviceId: { exact: rear.deviceId }, ...(buildConstraints(mode).video as MediaTrackConstraints) },
                 audio: false,
               });
             }
@@ -196,17 +227,13 @@ export default function AlcoholLevelPage() {
         v.srcObject = stream!;
         v.playsInline = true;
 
-        // Actualiza AR cuando se conozcan dimensiones del video
         const onMeta = () => {
-          if (v.videoWidth && v.videoHeight) {
-            setAr(v.videoWidth / v.videoHeight);
-          }
+          if (v.videoWidth && v.videoHeight) setAr(v.videoWidth / v.videoHeight);
         };
         v.addEventListener("loadedmetadata", onMeta, { once: true });
 
         await v.play().catch(() => {});
 
-        // Si ya hay dimensiones, fija AR de inmediato
         const track = stream!.getVideoTracks()[0];
         const s = track.getSettings();
         if (typeof s.aspectRatio === "number") {
@@ -253,7 +280,6 @@ export default function AlcoholLevelPage() {
       (blob) => {
         if (!blob) return;
 
-        // añadir directo a la galería
         const url = URL.createObjectURL(blob);
         const item: PhotoItem = {
           id: idCounterRef.current++,
@@ -512,15 +538,21 @@ export default function AlcoholLevelPage() {
             </button>
           </div>
 
-          {/* Live video: respeta el aspecto real del stream */}
+          {/* Live video: sin barras (portrait real) */}
           <div className="mt-6 rounded-xl border border-slate-700 bg-black/40 p-3">
             <div
-              className="mx-auto w-full max-w-3xl max-h-[75vh]"
-              style={ar ? { aspectRatio: ar } : undefined}
+              className="mx-auto w-full max-w-3xl"
+              style={
+                ar
+                  ? { aspectRatio: ar }
+                  : isPortraitWindow()
+                  ? { aspectRatio: 9 / 16 }
+                  : { aspectRatio: 16 / 9 }
+              }
             >
               <video
                 ref={videoRef}
-                className="h-full w-full rounded-lg bg-black object-contain"
+                className="h-full w-full rounded-lg bg-black object-cover"
                 muted
                 playsInline
               />
