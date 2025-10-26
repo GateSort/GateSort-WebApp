@@ -31,8 +31,6 @@ type BottlePrediction = {
   action: ActionLabel;              // "keep" | "discard"
 };
 
-type ServerResponse = { results: BottlePrediction[] } | BottlePrediction[];
-
 // ======================== Componente ========================
 export default function AlcoholLevelPage() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -46,6 +44,7 @@ export default function AlcoholLevelPage() {
 
   // Latest preview (no "upload latest")
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [photoBlob, setPhotoBlob] = useState<Blob | null>(null);
 
   // Gallery list
@@ -236,10 +235,8 @@ export default function AlcoholLevelPage() {
   // You may want to get airlineName from state or props; for now, hardcode or add as needed
   const airlineName = "Aeroméxico"; // TODO: Replace with dynamic value as needed
 
-  const uploadBlobs = async (items: { blob: string; id: number }[]) => {
+  const uploadBlobs = async (items: { blob: string; id: number }[], airlineName: string) => {
     // Items are already in base64 format
-    console.groupCollapsed("[uploadBlobs] Enviando imágenes");
-
     console.groupCollapsed("[uploadBlobs] Enviando imágenes");
     console.log("IDs:", items.map((i) => i.id));
     console.log("Endpoint:", '/api/actions');
@@ -281,7 +278,7 @@ export default function AlcoholLevelPage() {
         action: p.action 
       }))
     );
-    const { results } = await uploadBlobs(itemsToUpload);
+    const { results } = await uploadBlobs(itemsToUpload, airlineName);
 
     // Logs
     console.group("[uploadAll] Respuesta del servidor");
