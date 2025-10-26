@@ -204,38 +204,11 @@ export default function FoodExpiryPage() {
           <div className="mt-6 rounded-xl border border-slate-700 bg-black/40 p-3">
             <video
               ref={videoRef}
-              className="mx-auto aspect-video w-full max-w-3xl rounded-lg bg-black object-cover"
+              className="mx-auto aspect-video h-auto w-full max-w-3xl rounded-lg bg-black object-contain"
               muted
               playsInline
             />
           </div>
-
-          {/* Última captura */}
-          {photoUrl && (
-            <div className="mt-6">
-              <p className="mb-2 text-sm text-slate-300">Latest capture:</p>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={photoUrl}
-                alt="capture"
-                className="mx-auto max-h-96 w-auto rounded-xl border border-slate-700 object-contain"
-              />
-              <div className="mt-4 flex flex-col gap-3 sm:flex-row">
-                <button
-                  onClick={retake}
-                  className="flex-1 rounded-xl bg-slate-700 px-4 py-3 font-semibold text-white hover:bg-slate-600"
-                >
-                  Retake (clear preview)
-                </button>
-              </div>
-            </div>
-          )}
-
-          {error && (
-            <div className="mt-4 rounded-xl bg-rose-900/40 p-3 text-rose-200 ring-1 ring-rose-900/60">
-              {error}
-            </div>
-          )}
 
           <p className="mt-3 text-center text-sm text-slate-300">
             Note: on iOS/Safari, the camera can only start after a user gesture (click/tap).
