@@ -6,7 +6,6 @@ import Header from "../../components/Header";
 import BottomNav from "../../components/BottomNav";
 import { Play, Camera, Square } from "lucide-react";
 
-type Facing = "environment" | "user";
 type UploadStatus = "idle" | "uploading" | "ok" | "error";
 
 type PhotoItem = {
